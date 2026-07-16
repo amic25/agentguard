@@ -1,0 +1,16 @@
+image: python:3.13-slim
+
+stages:
+  - security
+
+agentguard:
+  stage: security
+  before_script:
+    - python -m pip install --disable-pip-version-check agentguard-sast
+  script:
+    - agentguard scan . --format json --output agentguard-report.json --fail-on high
+  artifacts:
+    when: always
+    paths:
+      - agentguard-report.json
+    expire_in: 1 week
