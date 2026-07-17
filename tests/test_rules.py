@@ -13,6 +13,7 @@ from agentguard.scanner import Scanner
     ("filename", "content", "rule_id"),
     [
         ("agent.py", 'OPENAI_API_KEY = "sk-proj-abcdefghijklmnopqrstuvwxyz123456"', "AG001"),
+        ("agent.py", 'GOOGLE_API_KEY = "AIzaSyB3X_97fX7Z-2kLmNpQrStUvWxYz123456"', "AG001"),
         ("agent.py", "import os\nos.system(user_input)", "AG002"),
         ("agent.py", "Agent(tools=[shell, browser])", "AG003"),
         ("agent.py", 'prompt = f"Summarize: {user_input}"', "AG004"),
@@ -47,6 +48,13 @@ def test_safe_code_has_no_findings(project: Path) -> None:
 
 def test_placeholder_secret_is_ignored(project: Path) -> None:
     (project / "settings.py").write_text('api_key = "your_api_key_here"', encoding="utf-8")
+    assert Scanner().scan(project).findings == []
+
+
+def test_google_api_key_placeholder_is_ignored(project: Path) -> None:
+    (project / "settings.py").write_text(
+        'GOOGLE_API_KEY = "AIzaSyYOUR_API_KEY_HERE1234567890123456"', encoding="utf-8"
+    )
     assert Scanner().scan(project).findings == []
 
 

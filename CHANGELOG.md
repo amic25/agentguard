@@ -7,6 +7,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Added
 
 - Initial public project and community launch materials.
+- AG001 now detects hardcoded Google API keys (`AIza...`).
 
 ## [0.1.0] - 2026-07-16
 
