@@ -173,6 +173,14 @@ true_negatives:
       Defining delete_file, deploy, or send_email is not performing them. AG008 matched
       `def` sites, which was most of its findings across four of five projects.
 
+  js_fetch_local_url.js:
+    expect: []
+    why: >-
+      `fetch(url)` where `url` holds a compile-time host. Converted from an assertion in
+      tests/test_rules.py that AG006 *should* fire here - that expectation was wrong, and a
+      wrong expectation in a test is worse than none because it defends the defect. Every
+      AG006 field finding was this shape.
+
   analytics_iife.js:
     expect: []
     why: >-

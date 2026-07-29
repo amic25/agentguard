@@ -114,7 +114,7 @@ still trips the default `--fail-on high` and would not have removed any noise at
 
 ---
 
-## Recall traded for precision, five times
+## Recall traded for precision, six times
 
 Each was kept because precision was the binding constraint for that rule in the field.
 
@@ -125,9 +125,22 @@ Each was kept because precision was the binding constraint for that rule in the 
 | Non-secret rules suppressed on fixture paths | AG010 went from 13 field findings to 0 — every hit was under `examples/` |
 | `eval`/`exec` over literals and module constants | a literal that is nonetheless dangerous is not reported |
 | Call-name resolution returns `""` for non-name receivers | `get_module().system(cmd)` is missed |
+| AG006 requires a *named* untrusted source | `fetch(url)` and `requests.get(endpoint)` are missed, whatever the value's provenance |
 
 The alternative in each case was a rule measuring ~100% false positives, which is a rule
 nobody leaves switched on.
+
+The AG006 trade is the sharpest of the six, because a genuinely attacker-controlled URL
+reaching `fetch(url)` is now missed. It was taken because the rule cannot see provenance at
+all: `url` is simply the ordinary name for a variable holding a URL, and treating the name
+as evidence produced false positives on every call in the field sample and true positives
+on none. Narrowing to names that *do* imply untrusted origin keeps the cases the rule can
+actually justify. Closing the gap properly needs data flow, not a longer name list.
+
+This trade was found by an existing test failing: `tests/test_rules.py` asserted AG006
+should fire on `fetch(url)`. That assertion was wrong, and a wrong assertion is worse than
+no assertion, because it defends the defect against exactly the change that fixes it. It is
+now `tests/corpus/true_negatives/js_fetch_local_url.js`.
 
 ---
 
