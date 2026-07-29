@@ -39,3 +39,22 @@ Use imperative, descriptive commits such as `Add MCP wildcard permission rule`. 
 ## Community standards
 
 Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+
+## Adding or changing a rule
+
+- Declare `languages` on `RuleMetadata`. It is required; a rule that does not say which
+  languages it applies to would be run against lockfiles and CI configuration.
+- Add both a true positive and a **true negative** to `tests/corpus/`, each with a `why`.
+  A pattern with no negative case is untested surface. `make bench` reports the effect.
+- If the rule declares `max_line_length=UNBOUNDED`, run `python -m tools.measure_linearity`
+  and confirm every pattern is linear. CI enforces this with `--check`. An unbounded
+  non-linear pattern is a denial-of-service vector, not a slow rule.
+- Never reuse a retired rule ID — see [docs/RULE_IDS.md](docs/RULE_IDS.md).
+
+## Test harnesses
+
+**Run every new harness against a deliberately broken input before trusting it.** Four
+harnesses in this project's history reported success while measuring nothing: two
+false-positive probes that could not distinguish the states they compared, a corpus entry
+that could never reach the policy it claimed to pin, and an aggregation check whose quoted
+variable stopped it ever splitting. A harness that cannot fail is not a harness.

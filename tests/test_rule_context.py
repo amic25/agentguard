@@ -322,3 +322,92 @@ def test_shell_true_with_a_string_is_still_an_injection_finding(project: Path) -
     )
     findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG002"]
     assert findings and "no enforceable command boundary" in findings[0].explanation
+
+
+# --- dispositions of the five corpus failures -------------------------------------------
+
+
+def test_ag003_no_longer_flags_a_local_named_function_map(project: Path) -> None:
+    """FIXED. The clause matched any variable of that name, and where it did hit
+    AutoGen's real parameter it flagged a function map's existence, not its breadth."""
+    content = "def build(tools):\n    function_map = {t.name: t for t in tools}\n    return function_map\n"
+    assert "AG003" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag003_still_flags_an_explicit_capability_grant(project: Path) -> None:
+    content = "agent = Agent(role='ops', allow_dangerous_code=True)\n"
+    assert "AG003" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag005_no_longer_flags_a_path_normaliser(project: Path) -> None:
+    """FIXED. `path = "/" + path` prefixes a separator; it does not grant a root."""
+    content = 'def n(path):\n    if not path.startswith("/"):\n        path = "/" + path\n    return path\n'
+    assert "AG005" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag005_still_flags_a_genuinely_broad_root(project: Path) -> None:
+    assert "AG005" in _rules(_findings(project, "mod.py", 'workspace = "/"\n'))
+
+
+def test_ag006_no_longer_flags_a_variable_merely_named_url(project: Path) -> None:
+    """FIXED. Every AG006 field finding was a compile-time host over TLS with a timeout."""
+    content = (
+        "import requests\n\n\n"
+        "def get(ds):\n"
+        '    url = f"https://api.example.invalid/v1/{ds}"\n'
+        "    return requests.get(url, timeout=30)\n"
+    )
+    assert "AG006" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag006_still_flags_an_actually_untrusted_source(project: Path) -> None:
+    content = "import requests\n\n\ndef get(tool_input):\n    return requests.get(tool_input, timeout=5)\n"
+    assert "AG006" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag006_still_flags_plaintext_http(project: Path) -> None:
+    content = 'import requests\n\n\ndef get():\n    return requests.get("http://x.invalid/a")\n'
+    assert "AG006" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_no_longer_flags_exec_of_a_module_constant(project: Path) -> None:
+    """FIXED. The executed argument is a name bound once to a literal at module scope."""
+    content = (
+        '_IMPORTS = "import os\\n"\n\n\ndef build():\n    ns = {}\n    exec(_IMPORTS, ns)\n    return ns\n'
+    )
+    assert "AG002" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_still_flags_exec_of_a_reassigned_name(project: Path) -> None:
+    """ "Bound exactly once" is load-bearing: a rebindable name is not a constant."""
+    content = (
+        '_IMPORTS = "import os\\n"\n\n\n'
+        "def override(v):\n"
+        "    global _IMPORTS\n"
+        "    _IMPORTS = v\n\n\n"
+        "def build():\n    exec(_IMPORTS, {})\n"
+    )
+    assert "AG002" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_still_flags_exec_of_a_parameter(project: Path) -> None:
+    assert "AG002" in _rules(_findings(project, "mod.py", "def run(code):\n    exec(code, {})\n"))
+
+
+@pytest.mark.xfail(
+    reason=(
+        "ACCEPTED PRECISION LIMIT, not a bug to be fixed silently. AG008 cannot tell a "
+        "tool deleting a caller-supplied path from a function deleting a temp file it "
+        "created itself; that needs data flow the rule does not have. Recorded in "
+        "docs/DECISIONS.md. This xfail is the marker - if it ever XPASSes, the limit has "
+        "been closed and the disposition should be revisited."
+    ),
+    strict=True,
+)
+def test_ag008_internal_cleanup_is_a_known_limit(project: Path) -> None:
+    content = (
+        "def append(sandbox, temp_path, code):\n"
+        "    if code != 0:\n"
+        "        sandbox.fs.delete_file(temp_path)\n"
+    )
+    assert "AG008" not in _rules(_findings(project, "mod.py", content))

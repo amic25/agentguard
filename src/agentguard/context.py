@@ -21,6 +21,10 @@ _FIXTURE_PATH = re.compile(
 )
 _FIXTURE_NAME = re.compile(r"(?i)^(?:test_.*|.*_test|conftest|.*\.spec|.*\.test)$")
 
+#: `.env.example` and friends exist to be committed and hold placeholders by convention.
+#: A real `.env` does not, and is scanned at full severity.
+_ENV_TEMPLATE = re.compile(r"(?i)^\.env\.(?:example|sample|template|dist|defaults?)$")
+
 #: Paths holding code this project did not write and does not ship as its own. Findings
 #: here are almost always about somebody else's release, and are not actionable in the
 #: repository being scanned. Downgraded on the same footing as fixtures.
@@ -109,6 +113,7 @@ class SourceFile:
             _FIXTURE_PATH.search(relative)
             or _FIXTURE_PATH.search(rooted)
             or _FIXTURE_NAME.match(self.path.stem)
+            or _ENV_TEMPLATE.match(self.path.name)
         )
 
     @property

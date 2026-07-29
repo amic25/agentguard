@@ -54,20 +54,43 @@ class HardcodedSecretRule(Rule):
     )
     _placeholder = re.compile(r"(?i)(example|dummy|test|changeme|your[_-]|xxx|<|\$\{|process\.env)")
 
+    #: `.env` files conventionally leave values unquoted - `DB_PASSWORD=hunter2`, not
+    #: `DB_PASSWORD="hunter2"` - so the quoted assigned-credential pattern misses the
+    #: normal case entirely. Applied only to env files: requiring quotes is what keeps
+    #: that pattern from matching `password = get_password()` in ordinary source.
+    #:
+    #: The name is captured whole and tested in Python rather than matched with
+    #: `[A-Z0-9_]*KEYWORD[A-Z0-9_]*`. That form has two unbounded quantifiers around an
+    #: alternation and measured quadratic - 918ms on 32KB, extrapolating to ~16 minutes
+    #: on a 1MB line. AG001 runs unbounded, so that was a denial-of-service vector; the
+    #: `--check` gate caught it before it shipped.
+    _env_assignment = re.compile(r"^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(?!['\"])(\S{12,})\s*$")
+    _env_credential_name = re.compile(r"(?i)(?:api[_-]?key|secret|token|password|passwd|pwd)")
+    _env_file = re.compile(r"^\.env(?:\..+)?$")
+
     def scan(self, source: SourceFile) -> Iterable[Finding]:
+        env = bool(self._env_file.match(source.path.name))
+        patterns = (
+            (*self._patterns, ("environment credential", self._env_assignment)) if env else self._patterns
+        )
         for number, line in enumerate(source.lines, 1):
-            for kind, pattern in self._patterns:
+            for kind, pattern in patterns:
                 match = pattern.search(line)
                 if not match:
                     continue
-                value = match.group(1) if match.lastindex else match.group(0)
-                # Point at the credential, not at the identifier before it. The engine
-                # tests regions at this column, and `token: "contextvars.Token[Any]"` is
-                # only distinguishable from a real credential by where the value sits.
-                column = (match.start(1) if match.lastindex else match.start()) + 1
+                if kind == "environment credential":
+                    if not self._env_credential_name.search(match.group(1)):
+                        continue
+                    value, column = match.group(2), match.start(2) + 1
+                else:
+                    value = match.group(1) if match.lastindex else match.group(0)
+                    column = (match.start(1) if match.lastindex else match.start()) + 1
+                # `column` points at the credential, not the identifier before it. The
+                # engine tests regions at this column, and `token: "contextvars.Token[Any]"`
+                # is only distinguishable from a real credential by where the value sits.
                 if self._placeholder.search(value):
                     continue
-                if kind == "assigned credential" and self._entropy(value) < 3.0:
+                if kind in {"assigned credential", "environment credential"} and self._entropy(value) < 3.0:
                     continue
 
                 public = self._is_public(line[: match.start()], value)

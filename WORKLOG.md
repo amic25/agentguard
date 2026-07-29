@@ -1028,3 +1028,135 @@ Decisions taken alone:
   lacks (report artifacts), invited a rebase as a follow-up. **Not closed.**
 
 Nothing closed. No tag. Work PR not merged.
+
+---
+
+## Unit 14 — coverage-bound test, generic linearity gate, five dispositions, docs — 2026-07-29
+
+Status: complete
+Changed: `context.py`, `scanner.py`, `rules/secrets.py`, `rules/code.py`,
+`tools/measure_linearity.py`, `tests/test_coverage.py`, `tests/test_linearity_gate.py` (new),
+`tests/test_rule_context.py`, `tests/test_corpus.py`, `tests/test_rules.py`,
+`tests/corpus/manifest.yml`, 2 new corpus files, `README.md`, `CHANGELOG.md`,
+`CONTRIBUTING.md`, `SUPPORT.md` (new), `docs/DECISIONS.md` (new), `docs/CI_SETUP.md` (new),
+`.github/workflows/ci.yml`
+
+Verified:
+```
+ruff format --check src tests tools   → ok
+ruff check src tests tools            → ok
+mypy src                              → ok
+pytest -q                             → 195 passed, 1 xfailed
+python -m tools.measure_linearity --check → exit 0
+agentguard scan src --fail-on medium  → exit 0
+python -m tools.bench                 → 93.3% precision, 100% recall
+```
+
+### Session recovery
+
+The connection dropped mid-README-write. Re-established from disk: branch
+`post-merge/queue-1`, nothing committed since `8f2c4b8`, all work uncommitted (14 modified,
+6 new). Nothing truncated; the README rewrite had landed complete but with the labelled-file
+count wrong in two places.
+
+### 1. Coverage computes against the tightest bound — now pinned
+
+`test_coverage_uses_the_tightest_applied_bound` runs two rules bounded at 100 and 4096 over
+a 200-char line. Verified it fails when `min` is flipped to `max`.
+
+A second test, `test_an_unbounded_rule_does_not_erase_coverage_for_bounded_ones`, does *not*
+discriminate min from max — positive bounds are filtered before either applies, so
+`UNBOUNDED` cannot win the comparison. Its original docstring claimed otherwise; corrected
+rather than left, and the docstring now says which test does the discriminating.
+
+### 2. The linearity gate is generic and runs in CI
+
+`tools/measure_linearity.py` now discovers every rule declaring `UNBOUNDED` and every
+compiled pattern on it by introspection, builds stress inputs from each pattern's own
+literal runs, and takes the worst exponent. `--check` runs in `ci.yml`.
+
+**It immediately caught a denial-of-service vector added in this same session.** The first
+`_env_assignment` pattern used `[A-Z0-9_]*KEYWORD[A-Z0-9_]*` — two unbounded quantifiers
+around an alternation — and measured **exponent 2.00, 918 ms on 32 KB, extrapolating to
+~16 minutes on a 1 MB line**, on a rule that reads lines unbounded. Rewritten to capture
+the name once and test it in Python: exponent 0.99, 9.3 ms at 1 MB.
+
+That is the gate paying for itself before it was even committed.
+
+### 3. Dispositions for the five corpus failures
+
+| Rule | Corpus case | Disposition |
+|---|---|---|
+| AG003 | `framework_lookup_maps.py` | **FIXED** — `function_map\s*=` clause removed entirely |
+| AG002 | `exec_of_module_constant.py` | **FIXED** — module-level constants resolved; only arg 0 is checked |
+| AG005 | `path_normaliser.py` | **FIXED** — lookahead rejects a concatenated root |
+| AG006 | `fixed_host_requests.py` | **FIXED** — `url`/`uri`/`endpoint` dropped from the untrusted-source list |
+| AG008 | `internal_cleanup.py` | **ACCEPTED** — needs data flow; strict `xfail` marker |
+
+AG003's clause was removed rather than narrowed: even where it hit AutoGen's real
+parameter it flagged a function map's *existence*, not an over-broad one, so a clause that
+cannot express the breadth the rule is named for does not belong in it.
+
+AG002 needed two fixes, not one. Resolving module constants was insufficient because the
+check required *every* argument to be fixed, and `exec(code, namespace)` passes a globals
+dict second — so it never fired on the two-argument form, which is the common one. Only
+argument 0 is executed.
+
+AG006's narrowing broke `tests/test_rules.py`, which asserted AG006 fires on `fetch(url)` —
+the exact false positive being removed. The expectation was wrong and is now
+`fetch(user_input)`. That is the recall trade made visible by an existing test.
+
+Corpus precision: **72.2% → 93.3%**, recall unchanged at 100%.
+
+### Queue items 6, 5, 8, 9, 10
+
+- **6 CHANGELOG:** `[0.1.0] - 2026-07-16` annotated `NEVER PUBLISHED` with the reasoning,
+  not deleted. Dead compare/tag links replaced.
+- **5 `.env`:** **decided to scan it.** A secrets scanner that structurally cannot read the
+  canonical secrets file is indefensible. `.env` carries no extension so the suffix map
+  never reached it. Values there are conventionally *unquoted*, which the quoted
+  assigned-credential pattern misses entirely — so there is a second, env-file-only
+  pattern; requiring quotes is what keeps the general one from matching
+  `password = get_password()`. `.env.example` and friends classify as fixtures.
+  `DEBUG=true` and `PORT=8080` do not fire.
+- **8 hygiene:** LICENSE, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT already existed and were
+  left alone. Added `SUPPORT.md` and `docs/CI_SETUP.md`, the latter recording that required
+  status contexts are check-run names picked from GitHub's suggestion list and never typed
+  — three phantom contexts (`test`, `pytest`, `CI`) blocked merges for exactly that reason.
+- **9 `docs/DECISIONS.md`:** eleven decisions, each with its cost first.
+- **10 README:** rewritten around `make bench`. Headline is **93.3% / 100% over 31 labelled
+  files**, AG008 named as the single failure. No badge wall. History of the number is not
+  narrated there — it lives here and in DECISIONS.md.
+
+### README number audit
+
+Every figure checked against a command, after the count was found wrong:
+
+```
+31 labelled      → manifest 31, files on disk 31 (13 TP + 18 TN)
+12 field-derived → 12 of 18 true negatives cite a measurement; 6 do not
+73 dataset       → findings.json holds 73 records across 5 projects
+4096 cap         → DEFAULT_MAX_LINE_LENGTH == 4096
+28 KB / 34 s / 32 ms / ~4x → re-measured: 28.1 KB, 34.94 s, 32.62 ms, 3.9x per doubling
+bench table      → diffed byte-for-byte against `python -m tools.bench`; identical, and the
+                   comparison was verified to detect a tampered figure
+```
+
+Three claims were **wrong and corrected**:
+1. "26 labelled files" — actually 31, wrong in two places.
+2. "every true negative was drawn from a false positive observed on real code" — false;
+   12 of 18 are, 6 were written from a checklist.
+3. The recall-trade list named AG007 among "four rules narrowed" — AG007 was narrowed in
+   earlier work, not among these dispositions. Rewritten to name each rule and its trade
+   without a count.
+
+Also narrowed the rule table's "caller-controlled URLs" for AG006, which after the
+narrowing overclaims — it now requires a *named* untrusted source.
+
+Bench delta: 72.2% → 93.3% precision, recall unchanged at 100%.
+Decisions taken alone:
+1. **README states 93.3%, not the 72.2% in the instruction.** The instruction predated the
+   dispositions requested in the same message; 72.2% is superseded and `make bench`
+   reproduces 93.3%. Reproducibility was the stated principle, so the live number wins.
+2. **AG008 named as the one remaining failure**, not five — the other four were fixed in
+   this unit.

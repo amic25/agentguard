@@ -41,16 +41,17 @@ def test_measurement_is_not_degraded_by_scan_errors() -> None:
     assert not scan_errors, f"corpus scan produced errors: {scan_errors}"
 
 
-def test_undiscovered_files_are_reported_not_silently_passed() -> None:
+def test_every_corpus_file_is_discovered() -> None:
     """A file discovery never opens proves nothing; the harness must say so.
 
-    `.env.example` is currently in this state, which also means a real `.env` would be
-    missed. If discovery is extended to cover it, this test should be updated to assert
-    the new coverage rather than deleted.
+    `.env.example` used to be in this state, and so did every real `.env` — a secrets
+    scanner that could not read the canonical secrets file. Discovery now covers them, so
+    the expected set is empty. If this grows, something stopped being scanned.
     """
     _, _, undiscovered = measure(load_manifest())
-    assert undiscovered == ["true_negatives/.env.example"], (
-        "the set of files AgentGuard cannot see has changed; update this test deliberately"
+    assert undiscovered == [], (
+        f"corpus files AgentGuard cannot see: {undiscovered}. Either discovery regressed, "
+        "or a file shape was added that nothing scans."
     )
 
 

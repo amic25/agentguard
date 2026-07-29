@@ -24,7 +24,10 @@ from agentguard.scanner import Scanner
         ("requirements.txt", "langchain", "AG010"),
         ("agent.ts", "execSync(command)", "AG002"),
         ("agent.ts", "const prompt = `Read ${web_content}`", "AG004"),
-        ("agent.ts", "fetch(url)", "AG006"),
+        # was `fetch(url)`: a variable merely named `url` says nothing about where the
+        # value came from, and every AG006 field finding was that shape. The rule now
+        # requires a named untrusted source.
+        ("agent.ts", "fetch(user_input)", "AG006"),
         ("agent.ts", "tool({ name: 'lookup', execute: run })", "AG007"),
     ],
 )

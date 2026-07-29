@@ -152,3 +152,82 @@ def test_a_rule_declaring_unbounded_sees_the_whole_line(project: Path) -> None:
     (project / "a.py").write_text("x" * 9000 + "NEEDLE\n", encoding="utf-8")
     result = Scanner(Config(), rules=[UnboundedRule()]).scan(project)
     assert [f.rule_id for f in result.findings] == ["XX901"]
+
+
+# --- which bound coverage is computed against ------------------------------------------
+
+
+class TightlyBoundRule(Rule):
+    """Sees very little of each line."""
+
+    metadata = RuleMetadata(
+        "XX902",
+        "Tight",
+        Severity.LOW,
+        "test",
+        "narrow view",
+        languages=frozenset({"python"}),
+        fixture_policy="report",
+        max_line_length=100,
+    )
+
+    def scan(self, source: SourceFile) -> Iterable[Finding]:
+        return []
+
+
+class LooselyBoundRule(Rule):
+    metadata = RuleMetadata(
+        "XX903",
+        "Loose",
+        Severity.LOW,
+        "test",
+        "wide view",
+        languages=frozenset({"python"}),
+        fixture_policy="report",
+        max_line_length=4096,
+    )
+
+    def scan(self, source: SourceFile) -> Iterable[Finding]:
+        return []
+
+
+def test_coverage_uses_the_tightest_applied_bound(project: Path) -> None:
+    """A line is a coverage gap if *any* rule was shown less than all of it.
+
+    With rules at 100 and 4096, a 200-char line is withheld from the first and not the
+    second. Computing coverage against the loosest bound reports nothing here — and once
+    a rule declares UNBOUNDED that failure becomes total, because the loosest bound is
+    then unbounded and no line is ever over it. This pins the direction.
+    """
+    (project / "a.py").write_text("x" * 200 + "\n", encoding="utf-8")
+
+    result = Scanner(Config(), rules=[TightlyBoundRule(), LooselyBoundRule()]).scan(project)
+
+    assert not result.fully_covered, "a 200-char line is withheld from the 100-char rule"
+    assert result.truncated_lines == 1
+    assert result.truncated[0].bound == 100, "must report the tightest bound, not the loosest"
+    assert result.truncated[0].length == 200
+
+
+def test_an_unbounded_rule_does_not_erase_coverage_for_bounded_ones(project: Path) -> None:
+    """Mixing UNBOUNDED with a bounded rule still reports the bounded rule's gap.
+
+    This does *not* discriminate min from max — positive bounds are filtered before
+    either is applied, so UNBOUNDED cannot win the comparison and both give 100 here.
+    `test_coverage_uses_the_tightest_applied_bound` is the test that catches that
+    inversion. This one pins the adjacent property: declaring a rule unbounded must not
+    be a way to make the run look fully covered.
+    """
+    (project / "a.py").write_text("x" * 200 + "\n", encoding="utf-8")
+
+    result = Scanner(Config(), rules=[TightlyBoundRule(), UnboundedRule()]).scan(project)
+
+    assert not result.fully_covered, "the unbounded rule must not mask the bounded rule's gap"
+    assert result.truncated[0].bound == 100
+
+
+def test_all_rules_unbounded_means_full_coverage(project: Path) -> None:
+    """When nothing is bounded there is genuinely no gap to report."""
+    (project / "a.py").write_text("x" * 9000 + "\n", encoding="utf-8")
+    result = Scanner(Config(), rules=[UnboundedRule()]).scan(project)
+    assert result.fully_covered

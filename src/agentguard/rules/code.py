@@ -43,6 +43,37 @@ def _is_literal(node: ast.expr) -> bool:
     return True
 
 
+def _module_constants(tree: ast.AST) -> frozenset[str]:
+    """Names bound exactly once, at module scope, to a literal.
+
+    `exec(_NAMESPACE_IMPORTS, ns)` reaches no attacker-controlled value, but the argument
+    is a Name rather than a literal so literal detection alone misses it. Measured in
+    browser-use (mcp/cli_mcp.py:105).
+
+    "Exactly once" is the load-bearing part. A name assigned a literal at module scope and
+    reassigned anywhere else - in a function, a branch, a loop - is not a constant, and
+    treating it as one would be a blind spot rather than a precision gain.
+    """
+    stores: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            stores[node.id] = stores.get(node.id, 0) + 1
+
+    literal: set[str] = set()
+    for statement in getattr(tree, "body", []):
+        if isinstance(statement, ast.Assign) and _is_literal(statement.value):
+            literal.update(t.id for t in statement.targets if isinstance(t, ast.Name))
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and statement.value is not None
+            and isinstance(statement.target, ast.Name)
+            and _is_literal(statement.value)
+        ):
+            literal.add(statement.target.id)
+
+    return frozenset(name for name in literal if stores.get(name, 0) == 1)
+
+
 class DangerousExecutionRule(Rule):
     metadata = RuleMetadata(
         "AG002",
@@ -56,6 +87,8 @@ class DangerousExecutionRule(Rule):
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         if source.language == "python":
+            tree = source.python_tree()
+            constants = _module_constants(tree) if tree is not None else frozenset()
             dangerous = {"eval", "exec", "os.system", "subprocess.run", "subprocess.call", "subprocess.Popen"}
             for call in _calls(source):
                 name = _name(call.func)
@@ -69,8 +102,21 @@ class DangerousExecutionRule(Rule):
                 )
                 # eval("{'retries': 3}") has no attacker-controlled input. Reporting it
                 # teaches readers that the rule cannot tell reachable from unreachable,
-                # which is how a scanner earns being switched off.
-                if call.args and all(_is_literal(argument) for argument in call.args) and not shell:
+                # which is how a scanner earns being switched off. A module-level constant
+                # counts as fixed for the same reason.
+                #
+                # Only the *first* argument is executed. `exec(code, namespace)` passes a
+                # globals dict second, and that it is a variable says nothing about whether
+                # the code is attacker-controlled. Requiring every argument to be fixed
+                # meant this never fired on the two-argument form, which is the common one.
+                executed = call.args[0] if call.args else None
+                if (
+                    executed is not None
+                    and not shell
+                    and (
+                        _is_literal(executed) or (isinstance(executed, ast.Name) and executed.id in constants)
+                    )
+                ):
                     continue
                 if shell and call.args and isinstance(call.args[0], ast.List | ast.Tuple):
                     # shell=True with an argument *vector* is a portability bug, not an
@@ -125,7 +171,12 @@ class BroadToolPermissionRule(Rule):
         languages=frozenset({"python", "javascript", "typescript"}),
     )
     _pattern = re.compile(
-        r"(?i)(allow_dangerous_code\s*=\s*True|allow_delegation\s*=\s*True|function_map\s*=|tools\s*=\s*\[[^\]]*(?:shell|terminal|filesystem|browser)|allowedTools\s*:\s*\[[^\]]*['\"]\*['\"]|dangerouslyAllowBrowser\s*:\s*true)"
+        # `function_map\s*=` was removed: it matched any local variable of that name -
+        # measured twice in openai-agents-python on ordinary dict comprehensions - and
+        # even where it hit AutoGen's real parameter it flagged the *existence* of a
+        # function map, not an over-broad one. A clause that cannot express the breadth
+        # the rule is named for does not belong in it. See docs/DECISIONS.md.
+        r"(?i)(allow_dangerous_code\s*=\s*True|allow_delegation\s*=\s*True|tools\s*=\s*\[[^\]]*(?:shell|terminal|filesystem|browser)|allowedTools\s*:\s*\[[^\]]*['\"]\*['\"]|dangerouslyAllowBrowser\s*:\s*true)"
     )
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
@@ -214,7 +265,11 @@ class UnsafeFileAccessRule(Rule):
     )
     # \b matters: without it, `path` matched inside `streamable_http_path`, reporting an
     # HTTP mount point as a broad filesystem root eight times in one real project.
-    _broad = re.compile(r"(?i)\b(?:root_dir|workspace|directory|path)\s*[:=]\s*['\"](?:/|~|\.\.)['\"]")
+    # The trailing lookahead matters: `path = "/" + path` prefixes a separator, it does
+    # not grant a filesystem root. Measured in crewAI (memory/utils.py:61).
+    _broad = re.compile(
+        r"(?i)\b(?:root_dir|workspace|directory|path)\s*[:=]\s*['\"](?:/|~|\.\.)['\"](?!\s*[+,]?\s*\w)"
+    )
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         for number, line in enumerate(source.lines, 1):
@@ -243,8 +298,14 @@ class RiskyExternalAPIRule(Rule):
     _http = re.compile(
         r"(?i)(?:requests\.(?:get|post|put|delete)|fetch|axios\.(?:get|post)|httpx\.(?:get|post))\s*\(\s*['\"]http://"
     )
+    # `url`, `uri`, and `endpoint` were removed from this list: they are the ordinary
+    # names for a local variable holding a URL, and say nothing about where the value
+    # came from. Every AG006 finding in the field measurement was one of these, on calls
+    # to compile-time hosts over TLS with timeouts. What remains names an actually
+    # untrusted source. Recall trade recorded in WORKLOG.md.
     _dynamic = re.compile(
-        r"(?i)(?:requests\.(?:get|post)|fetch|axios\.(?:get|post))\s*\(\s*(?:url|uri|endpoint|tool_input|user_input)"
+        r"(?i)(?:requests\.(?:get|post)|fetch|axios\.(?:get|post))\s*\(\s*"
+        r"(?:tool_input|user_input|user_url|request\.|req\.|model_output|llm_output)"
     )
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:

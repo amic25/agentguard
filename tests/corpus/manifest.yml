@@ -67,6 +67,14 @@ true_positives:
     expect: [AG002]
     why: execSync on a caller-supplied command in TypeScript.
 
+  .env:
+    expect: [AG001]
+    why: >-
+      The canonical secrets file. Values are unquoted, which is the convention and which
+      the quoted assigned-credential pattern does not match - so this needs its own
+      pattern, applied only to env files. `DEBUG=true` and `PORT=8080` must not fire,
+      which is what stops that pattern being a blanket KEY=VALUE matcher.
+
   root_dir_broad.py:
     expect: [AG005]
     why: >-
@@ -88,10 +96,10 @@ true_negatives:
   .env.example:
     expect: []
     why: >-
-      A .env template exists to be committed; its values are placeholders. Includes
-      AKIAIOSFODNN7EXAMPLE, AWS's own documentation key. NOTE: AgentGuard does not
-      currently discover .env files at all, so this entry is recorded by the harness as
-      not-discovered rather than as a pass. It also means a real .env would be missed.
+      A .env template exists to be committed and holds placeholders by convention, so it
+      is classified as a fixture and its values are caught by the placeholder filter.
+      Includes AKIAIOSFODNN7EXAMPLE, AWS's own documentation key. Previously this file was
+      not discovered at all and scored a free pass while proving nothing.
 
   secrets_in_docstrings.py:
     expect: []

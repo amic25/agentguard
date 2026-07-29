@@ -1,0 +1,188 @@
+# Decisions
+
+Load-bearing calls and what each cost. Reasoning and price, not narrative. A decision
+that reads as free was probably not examined closely enough.
+
+---
+
+## Delete AG009 rather than ship a stale advisory database
+
+AG009 bundled three hand-maintained CVE advisories and read only `requirements*.txt` and
+`package.json`. Across five real agent projects — 4,750 files — it fired zero times.
+
+**Cost:** AgentGuard reports nothing about vulnerable dependencies, and users who expected
+that must run a second tool. Deleting it also retired the ID permanently.
+
+**Why anyway:** a near-empty vulnerability database that never fires is worse than none,
+because a clean result implies dependencies were checked. Maintaining a real one is a
+data-operations commitment this project has not made. `pip-audit`, `osv-scanner`, and
+Dependabot own that data properly. Issue #16 tracks shelling out to them and normalising
+into `Finding`, which keeps one report without owning the data.
+
+---
+
+## Make the config trust boundary a type, not a convention
+
+`plugins` is absent from `RepoConfig` entirely, rather than filtered out of it.
+
+**Cost:** a repository owner who wants `plugins`, `disabled_rules`, or
+`severity_overrides` must pass `--config` explicitly instead of having it picked up
+automatically. That is friction on the common case to defend against the uncommon one.
+
+**Why anyway:** a scanned repository could previously name modules under `plugins:` and
+have them imported — arbitrary code execution from the tool's primary advertised use case,
+which then reported clean and exited 0. A check can be dropped in a refactor; a field that
+does not exist cannot be. `Config.tightened_by` is a meet, so a hostile repository can make
+its own scan stricter and never laxer.
+
+---
+
+## Exit code honours completeness, and 2 outranks 1
+
+`0` clean, `1` findings at or above threshold, `2` the scan did not complete.
+
+**Cost:** conditions that used to exit 0 now exit 2, so automation treating 0 as "clean"
+sees new failures.
+
+**Why anyway:** it was being misled. A rule crashing on every file exited 0 —
+indistinguishable from a clean scan, with CI green over zero coverage. SARIF already
+reported this correctly via `executionSuccessful`; only the exit code disagreed. 2 outranks
+1 because "the tool broke" and "the tool found problems" need different responses.
+
+---
+
+## Truncation is declared, not gated
+
+Lines beyond a rule's bound are reported in every output format. `--fail-on-incomplete`
+opts into exit 2; the default does not gate.
+
+**Cost:** a caller who ignores the coverage section gets an incomplete scan without being
+stopped.
+
+**Why anyway:** a bounded read is a known limitation, not a malfunction, and gating on it
+by default would fail on any repository containing a minified bundle. Silence was the real
+problem — the scan said nothing and exited 0. Naming what was not read is the honest
+middle, and the flag exists for callers who need certainty.
+
+---
+
+## Bounds are per rule, and only measured-linear patterns may go unbounded
+
+AG001 declares `UNBOUNDED` and reads whole minified lines. Everything else stays at 4096.
+
+**Cost:** an unbounded rule is a denial-of-service vector if any of its patterns
+backtracks. The guarantee has to be enforced forever, for patterns nobody has written yet.
+
+**Why anyway:** a credential at offset 5,000 of a one-line bundle was previously invisible,
+and that is a common real leak in exactly the file shape that exceeds the bound. The cost
+is paid by `tools/measure_linearity.py --check` in CI, which discovers unbounded rules and
+their patterns by introspection and fails the build on anything non-linear. It has already
+earned its place: it caught a quadratic pattern added *in the same session that wrote it*,
+projecting to roughly 16 minutes on a 1 MB line.
+
+---
+
+## A credential published by design is capped at Low
+
+PostHog project keys, Stripe publishable keys, and anything named `*_PUBLIC_*` / `*_ANON_*`
+report at Low with a "publishable by design" message.
+
+**Cost:** if the classification is wrong — someone commits a secret key whose name says
+public — a real compromise is reported at Low. The heuristic is name-and-prefix based and
+can be fooled.
+
+**Why anyway:** two of five real projects were reported as having Critical committed
+credentials, and both were keys meant to ship in client code. Reporting those as critical
+compromise is simply wrong, and a scanner that cries wolf on published keys gets ignored on
+real ones. Capped rather than dropped, because the publishable and secret halves are easy
+to confuse and it is still worth knowing the value is there.
+
+---
+
+## Test, example, and vendored paths are downgraded, not silenced
+
+Secret findings there report at Medium with low confidence; every other rule is suppressed.
+
+**Cost:** a real credential committed under `tests/` never gates CI. Real code that happens
+to live under `examples/` is under-reported. Path-based classification is a heuristic and
+a project with an unusual layout loses findings silently.
+
+**Why anyway:** fixtures were the single largest false-positive source measured. Secrets are
+downgraded rather than suppressed specifically because live credentials genuinely do reach
+test fixtures. Clamped to Medium rather than decremented one step, because `CRITICAL→HIGH`
+still trips the default `--fail-on high` and would not have removed any noise at all.
+
+---
+
+## Recall traded for precision, five times
+
+Each was kept because precision was the binding constraint for that rule in the field.
+
+| Change | Recall cost |
+|---|---|
+| AG005 requires `path` as a whole word | `file_path="/"`, `mount_path="/"` no longer match |
+| AG007 dropped bare `function(` | a JS tool registered via a plain function expression is missed |
+| Non-secret rules suppressed on fixture paths | AG010 went from 13 field findings to 0 — every hit was under `examples/` |
+| `eval`/`exec` over literals and module constants | a literal that is nonetheless dangerous is not reported |
+| Call-name resolution returns `""` for non-name receivers | `get_module().system(cmd)` is missed |
+
+The alternative in each case was a rule measuring ~100% false positives, which is a rule
+nobody leaves switched on.
+
+---
+
+## AG003's `function_map` clause removed rather than narrowed
+
+**Cost:** AutoGen configurations using `function_map` are no longer flagged at all.
+
+**Why anyway:** the clause matched any local variable of that name — measured twice in
+openai-agents-python on ordinary dict comprehensions — and even where it hit the real
+parameter it flagged a function map's *existence*, not an over-broad one. A clause that
+cannot express the breadth the rule is named for does not belong in it. Narrowing to a
+keyword-argument context would not have fixed that, only the false matches.
+
+---
+
+## AG008's internal-cleanup false positive accepted, not fixed
+
+`sandbox.fs.delete_file(temp_path)` cleaning up a file the code itself created is reported.
+
+**Cost:** AG008 sits at 50% precision on the corpus, and this is the reason.
+
+**Why anyway:** distinguishing a tool deleting a caller-supplied path from a function
+deleting its own temp file needs data flow the rule does not have, and inventing a
+name-based heuristic — "`temp_` prefixes are safe" — would be a guess dressed as analysis
+and would create a blind spot an attacker could name their way into. Recorded as
+`tests/test_rule_context.py::test_ag008_internal_cleanup_is_a_known_limit`, a strict
+`xfail`: if it ever passes, the limit closed and this decision needs revisiting.
+
+---
+
+## Scan `.env`, do not declare it out of scope
+
+**Cost:** a new discovery shape, a second credential pattern for unquoted values, and
+`.env` files are often gitignored, so a scan of a clean checkout may find nothing while a
+developer's working copy is full of live keys.
+
+**Why anyway:** a secrets scanner that structurally cannot read the canonical secrets file
+is indefensible. `.env` carries no extension, so the suffix map never reached it. Values
+there are conventionally unquoted, which the quoted assigned-credential pattern misses
+entirely, so the pattern is env-file-only — requiring quotes is what stops it matching
+`password = get_password()` in ordinary source. `.env.example` and friends are treated as
+fixtures, since a committed template holds placeholders by convention.
+
+---
+
+## Field numbers are published as a dataset, not cited as a metric
+
+`datasets/field-2026-07-29/` holds 73 findings and 16 labels. The README quotes only
+`make bench`.
+
+**Cost:** the most impressive numbers this project has — a 92% reduction in findings that
+gate CI — appear nowhere in the README.
+
+**Why anyway:** they are not reproducible from this repository, and the labels have a known
+bias: the same reader labelled them twice and disagreed with himself on 5 of 20, with all
+five moving the same direction. A number that cannot be re-derived and whose labels are
+disputed is a marketing claim. The dataset ships with its method and its bias so the labels
+can be argued with, which is worth more than the headline.

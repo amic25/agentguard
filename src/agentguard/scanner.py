@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
@@ -29,6 +30,11 @@ LANGUAGES = {
     ".yml": "manifest",
 }
 SPECIAL_FILES = {"Dockerfile", "Pipfile", "package-lock.json", "requirements.txt"}
+
+#: `.env` is where credentials live. A secrets scanner that cannot read the canonical
+#: secrets file is hard to defend, and these files carry no extension, so the suffix map
+#: never reached them. Covers `.env`, `.env.local`, `.env.production`, and templates.
+_ENV_FILE = re.compile(r"^\.env(?:\..+)?$")
 
 
 class Scanner:
@@ -66,11 +72,14 @@ class Scanner:
                 skipped += 1
                 continue
             scanned += 1
+            language = (
+                "manifest" if _ENV_FILE.match(path.name) else LANGUAGES.get(path.suffix.lower(), "manifest")
+            )
             source = SourceFile(
                 path,
                 root,
                 content,
-                LANGUAGES.get(path.suffix.lower(), "manifest"),
+                language,
                 max_line_length=self.config.max_line_length,
             )
             # Which bound each rule ran under, so coverage reflects what was actually
@@ -133,6 +142,7 @@ class Scanner:
                 path.suffix.lower() in LANGUAGES
                 or path.name in SPECIAL_FILES
                 or path.name.startswith("requirements")
+                or _ENV_FILE.match(path.name)
             ):
                 yield path
 
