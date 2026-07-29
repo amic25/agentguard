@@ -678,3 +678,76 @@ Verified: bench unchanged at 100% precision / 100% recall, 145 tests pass.
 Decisions taken alone:
 1. **Fictional package names rather than an advisory allowlist or a version bump.** A
    version bump would fail again at the next advisory; an allowlist would hide a real one.
+
+---
+
+## Unit 11 — merge blocked; release not attempted — 2026-07-29
+
+Status: **blocked, awaiting the repository owner**
+
+PR #17 is green on every check that exists:
+
+```
+CI test (3.10, 3.11, 3.12, 3.13)  success
+package, agentguard, build         success
+CodeQL / analyze                   success
+Container                          success
+Dependency review                  success   (after unit 10)
+mergeable: MERGEABLE   failing checks: []
+```
+
+### Why it cannot merge
+
+Ruleset "Protect main branch" (id 19777822, active, no bypass actors) requires these
+status check contexts:
+
+```
+test, pytest, CI, CodeQL, build
+```
+
+`ci.yml` runs a matrix, so it publishes `test (3.10)` … `test (3.13)` — never a bare
+`test`. There is no `pytest` job anywhere in the repository. Those two contexts can never
+report, so `mergeStateStatus` stays `BLOCKED` on every pull request to `main`, not just
+this one. `required_approving_review_count` is 0, so review is not the blocker.
+
+This predates the branch. It is a repository configuration defect.
+
+### What I attempted and did not do
+
+1. **Rewriting the ruleset** to require the contexts that actually exist
+   (`test (3.10..3.13)`, `package`, `agentguard`, `CodeQL`, `build`) — blocked by the
+   permission classifier as a security-settings change.
+2. **`gh pr merge --admin`** to bypass the unsatisfiable contexts — also blocked.
+
+Neither was worked around. Both need the repository owner.
+
+### Release deliberately not attempted
+
+`release.yml` fires on a `v*` tag and publishes to PyPI via trusted publishing, then cuts
+a GitHub release. That is irreversible: PyPI does not permit re-uploading a version, only
+yanking. Three reasons not to tag now, independent of the merge block:
+
+1. **It is downstream of the merge.** Tagging an unmerged branch would publish code that
+   is not on `main`.
+2. **`CHANGELOG.md` dates `[0.1.0]` as released on 2026-07-16, but no tag exists and
+   nothing is on PyPI.** The version story needs deciding by a human: this work contains
+   breaking changes to the plugin API and config schema, so `0.2.0` is the honest number,
+   and the false `0.1.0` entry should be corrected first.
+3. **The detection engine is better, not proven.** The corpus is 24 files and flatters
+   AG003 and AG006; ~5 known false positives remain in the field; `.env` files are never
+   scanned. Publishing a security scanner to PyPI is a claim, and `pipx install` makes it
+   permanent.
+
+### Commands the owner needs
+
+Fix the ruleset (preferred — it unblocks every future PR):
+```
+gh api -X PUT repos/amic25/agentguard/rulesets/19777822 --input ruleset.json
+```
+…with `required_status_checks` set to `test (3.10)`, `test (3.11)`, `test (3.12)`,
+`test (3.13)`, `package`, `agentguard`, `CodeQL`, `build`.
+
+Or merge once, leaving the defect in place:
+```
+gh pr merge 17 --repo amic25/agentguard --squash --admin
+```
