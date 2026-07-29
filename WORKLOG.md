@@ -1160,3 +1160,124 @@ Decisions taken alone:
    reproduces 93.3%. Reproducibility was the stated principle, so the live number wins.
 2. **AG008 named as the one remaining failure**, not five — the other four were fixed in
    this unit.
+
+---
+
+## Unit 15 — .env measured, AG006 disposed, origin split, gate evidence — 2026-07-29
+
+Status: complete. Five units, **committed individually** — the previous session ran fully
+uncommitted through two connection drops, and lost nothing only by luck.
+
+```
+8bd272a  Measure .env scanning, which shipped without it
+fc3e4b7  Convert the wrong AG006 assertion into a corpus true negative
+3615924  Mark every corpus case's origin and score the field-derived subset separately
+0648ace  Record the linearity gate catching its own author, with the measurements
+```
+Unit D needed no commit — see below.
+
+### 1. `.env` measured, and it was wrong twice
+
+`.env` support shipped with two corpus files and no coverage of the shapes that occur.
+Adding them found two false positives immediately:
+
+- `SERVICE_TOKEN=$OTHER_TOKEN` reported **Critical**. The placeholder filter matched
+  `${VAR}` but not a bare `$VAR`. An unbraced shell reference is a pointer to a value held
+  elsewhere, not the value.
+- `sk-proj-replace-this-before-running` in a template reported at Medium. It carries no
+  word the filter recognised.
+
+Both are *value-shape* problems, not file-classification ones, so the fix went in the
+placeholder filter rather than in how templates are handled. That distinction is
+load-bearing: a genuine credential committed to `.env.example` is a real leak and is still
+reported. Suppressing by filename would have hidden it.
+
+`.env.local` now covers commented-out credentials, empty values, braced and unbraced
+interpolation, sub-length values, and ordinary config — each failing to fire for a
+different reason. Verified non-vacuous: reverting the filter drops precision to 82.4% and
+names both cases.
+
+**AG001 declares UNBOUNDED, so the linearity gate was re-run after touching its patterns.**
+Still linear, 9 patterns across 1 rule. This is now the habit the gate is for.
+
+### 2. AG006's `fetch(url)` test — disposed as a corpus true negative
+
+Converted to `tests/corpus/true_negatives/js_fetch_local_url.js`. A wrong assertion is
+worse than no assertion: it defends the defect against the change that fixes it, which is
+exactly what happened — narrowing AG006 broke this test, and that is how the trade
+surfaced.
+
+Added to the recall-trades table as the sixth entry, and called out as the sharpest: a
+genuinely attacker-controlled URL reaching `fetch(url)` is now missed. The table header
+said "five times" while listing six; fixed.
+
+### 3. Origin marked explicitly; field-derived scored separately
+
+Every entry now declares `origin: field | written`, **enforced by bench** rather than
+inferred. The prior inference sniffed `why` for "measured"/"observed" and miscounted the
+moment an entry said "field finding" instead — which happened one commit earlier, and is
+why the README's split was left unquantified in unit 2 rather than guessed at.
+
+```
+33 of 34 cases behave as labelled.     # all
+12 of 13 cases behave as labelled.     # --field-only
+```
+Same single AG008 failure in both. `make bench` runs both; CI runs both.
+
+A precision figure over the field-derived subset is structurally skewed — a field false
+positive becomes a corpus *true negative*, so that subset is nearly all negatives and its
+50% precision says less than it appears to. "Behave as labelled" is the statistic that
+survives, and is what the README quotes.
+
+Two labels corrected: `.env.local` and `.env.sample` are `written`, not `field`. The false
+positives they caught were found by composing them, not by scanning anything.
+
+### 4. README framing — already correct, no commit
+
+The regression-gate framing landed in unit 1 and was strengthened in unit 3. Verified
+present rather than re-added: *"This is a regression gate, not a precision estimate… a
+corpus whose negatives were selected from observed failures is biased towards passing by
+construction. The field-only score exists to make that bias visible rather than argue it
+away."* Adding it twice would have been the kind of make-work this queue is meant to avoid.
+
+### 5. The gate catching its own author — now on record with numbers
+
+`docs/DECISIONS.md` gained a section. The `.env` pattern written *minutes after the gate
+itself* used two unbounded quantifiers around an alternation:
+
+```
+before:  exponent 2.00   917.86ms @32KB   990822.2ms @1MB   SUPER-LINEAR
+after:   exponent 0.99     0.29ms @32KB        9.3ms @1MB   linear
+```
+
+The recorded point is not that a mistake happened. It is that the gate's author, fully
+aware of why it existed, immediately wrote the thing it guards against and did not notice
+until a machine measured it. A review checklist could not have caught it — the reviewer
+wrote the checklist. That is the argument for CI over convention, and for `--check`
+failing rather than warning.
+
+CONTRIBUTING's harness-failure tally goes four → five: the equivalence run that truncated
+every line before comparing belongs on that list, having excluded the only inputs that
+could have shown the regression.
+
+### Verified
+
+```
+ruff format --check src tests tools   → ok
+ruff check src tests tools            → ok
+mypy src                              → ok
+pytest -q                             → 197 passed, 1 xfailed
+python -m tools.bench                 → 93.3% / 100%, 33 of 34 behave
+python -m tools.bench --field-only    → 12 of 13 behave
+python -m tools.measure_linearity --check → exit 0, 9 patterns linear
+```
+README numbers re-checked against commands: 34 labelled, 13 TP, 21 TN, 13 field, 8 written,
+both behave-lines, and the table diffed byte-for-byte against `tools.bench`.
+
+Bench delta: none from units 2–5. Unit 1 changed the placeholder filter; precision held at
+93.3% because the two new cases were added and fixed in the same commit, and the revert
+check confirms they would otherwise score 82.4%.
+Decisions taken alone:
+1. **Field-only reports "behave as labelled" rather than leading with precision**, because
+   precision over a subset selected from observed failures is skewed by construction.
+2. **Unit D closed without a commit**, the framing already being present and verified.
