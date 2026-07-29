@@ -138,6 +138,24 @@ def test_repo_cannot_widen_the_size_bound_in_a_real_scan(project: Path) -> None:
     assert not result.findings
 
 
+def test_repo_cannot_remove_operator_exclusions_in_a_real_scan(project: Path) -> None:
+    """A repo cannot un-exclude a path the operator excluded, and cannot narrow the
+    default exclusions by restating a shorter list."""
+    repo = project / "repo"
+    (repo / "vendor").mkdir(parents=True)
+    (repo / "vendor" / "bad.py").write_text("os.system(user_input)\n", encoding="utf-8")
+    (repo / "app.py").write_text("value = 1\n", encoding="utf-8")
+    # The repo asks for a scope that does *not* include the operator's exclusion.
+    (repo / ".agentguard.yml").write_text("exclude:\n  - nothing/**\n", encoding="utf-8")
+
+    operator = Config(exclude=["vendor/**"])
+    config = operator.tightened_by(RepoConfig.discover(repo))
+    result = Scanner(config).scan(repo)
+
+    assert "vendor/**" in config.exclude
+    assert not any("vendor" in f.location.path.as_posix() for f in result.findings)
+
+
 def test_repo_cannot_escape_the_root_via_symlinks(project: Path) -> None:
     outside = project / "outside"
     outside.mkdir()
@@ -156,3 +174,52 @@ def test_repo_cannot_escape_the_root_via_symlinks(project: Path) -> None:
     scanned = {path.name for path in [finding.location.path for finding in result.findings]}
     assert "escape.py" not in scanned
     assert result.files_scanned == 2  # app.py and .agentguard.yml; never through the symlink
+
+
+# --- the fixtures themselves must be inert -------------------------------------------
+
+
+def test_generated_hostile_fixture_is_inert(project: Path) -> None:
+    """The fixture must prove the import happened and do nothing else.
+
+    A regression test for an execution vulnerability is only worth having if it cannot
+    itself become the vulnerability. This pins the fixture to a marker write.
+    """
+    marker = project / "marker.txt"
+    _neutralised_plugin(project, marker)
+    source = (project / "hostile_plugin.py").read_text(encoding="utf-8")
+
+    for forbidden in ("subprocess", "socket", "shutil", "os.remove", "eval(", "exec(", "__import__"):
+        assert forbidden not in source, f"fixture must not reference {forbidden}"
+    assert source.count("write_text") == 1
+
+    exec_globals: dict[str, object] = {}
+    exec(compile(source, "hostile_plugin.py", "exec"), exec_globals)
+    assert marker.read_text(encoding="utf-8") == MARKER
+    assert exec_globals["rules"] == []
+
+
+def test_no_hostile_payload_is_committed_to_the_repository() -> None:
+    """Nothing executable and hostile may land in git, in any commit.
+
+    The fixtures are written into tmp_path at run time precisely so that this holds.
+    """
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    if git is None:  # pragma: no cover - depends on the runner image
+        pytest.skip("git unavailable; this check runs in CI, where it is present")
+
+    root = Path(__file__).resolve().parent.parent
+    completed = subprocess.run([git, "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:  # pragma: no cover - not a git checkout
+        pytest.skip("not a git work tree")
+    tracked = completed.stdout.split("\0")
+
+    for name in filter(None, tracked):
+        assert Path(name).name != "hostile_plugin.py", f"{name} must not be committed"
+        if name.endswith(".agentguard.yml"):
+            assert "plugins:" not in (root / name).read_text(encoding="utf-8"), (
+                f"{name} declares plugins; a discovered config must never do so"
+            )

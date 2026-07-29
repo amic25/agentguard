@@ -80,3 +80,67 @@ Decisions taken alone:
 
 Next: unit 2 — close out F1 (raise-attempt tests for `max_file_size_kb`, `follow_symlinks`,
 `exclude`, plugin loading; confirm fixtures inert; exit-code invariant test).
+
+---
+
+## Unit 2 — close out F1 — 2026-07-29
+
+Status: complete
+Changed: `tests/test_trust_boundary.py` (three tests added)
+
+Verified:
+```
+ruff format --check src tests   → 23 files already formatted
+ruff check src tests            → All checks passed!
+mypy src                        → Success: no issues found in 14 source files
+pytest -q                       → 74 passed, 92.71% coverage
+```
+
+Exit-code invariant, end to end (real invalid UTF-8 bytes, not shell-escaped text):
+```
+clean repo        → 0
+undecodable file  → 2   "Scan incomplete: 1 error(s); results are not a clean bill of health."
+crashing rule     → 2   (tests/test_scan_integrity.py::test_cli_exits_2_when_a_rule_crashes)
+```
+
+### Failing-before / passing-after, per vector
+
+Probed a hostile repo against a worktree at `fe9ba0f` (pre-trust-boundary) and at HEAD:
+
+| Vector | Before | After |
+|---|---|---|
+| repo config loads a plugin | **VULNERABLE** — repo code imported | SAFE — not imported |
+| repo raises `max_file_size_kb` | **VULNERABLE** — 1523 KB file scanned | SAFE — skipped, bound held at 1024 KB default |
+| repo enables `follow_symlinks` | **VULNERABLE** — read outside root via symlink | SAFE — symlink not followed |
+| repo shrinks `exclude` | SAFE | SAFE |
+
+**`exclude` was never vulnerable.** The pre-fix `Config.load` already prepended
+`DEFAULT_EXCLUDES` unconditionally, so a repo could add exclusions but never remove them.
+The typed boundary is defense in depth here, not a fix, and this entry exists so the
+commit is not read as claiming otherwise.
+
+Two probe-authoring errors were caught and corrected before recording results — worth
+noting because both would have produced a *false* baseline:
+- The `max_file_size_kb` probe first used a 360 KB file, under the 1024 KB default, so
+  neither state skipped it and the fix looked broken. Corrected to 1523 KB.
+- The `follow_symlinks` probe first used `"AKIA" + "IOSFODNN7SECRET1"`, split to avoid a
+  key-shaped literal. Concatenation means the AG001 regex cannot match, so the probe
+  measured nothing and reported SAFE for both states. Corrected to a single fabricated,
+  non-live literal.
+
+Fixture inertness: `test_generated_hostile_fixture_is_inert` pins the generated plugin to
+a single `write_text` and asserts it references no `subprocess`, `socket`, `shutil`,
+`os.remove`, `eval(`, `exec(`, or `__import__`.
+`test_no_hostile_payload_is_committed_to_the_repository` walks `git ls-files` and asserts
+no `hostile_plugin.py` is tracked and no committed `.agentguard.yml` declares `plugins:`.
+Confirmed on the host across all 66 tracked files: none.
+
+Bench delta: n/a — `make bench` does not exist yet (unit 5).
+
+Decisions taken alone:
+1. **`test_no_hostile_payload_is_committed_to_the_repository` skips when `git` is absent**
+   rather than failing. It is a repository-hygiene check, not a code check, and the dev
+   container has no git. It runs for real in CI and on the host, where it passes.
+
+Next: unit 3 — AG004 ReDoS. Note this is a rule change, and per the brief no rule may
+change before `make bench` exists (unit 5). Sequencing question resolved below.
