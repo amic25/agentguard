@@ -32,18 +32,23 @@ Measured against a labelled corpus in this repository. Reproduce it with `make b
 | **all** |  14 |   1 |   0 |     93.3% | 100.0% |
 ```
 
-**93.3% precision and 100% recall over 31 labelled files** — 13 true positives and 18 true
+**93.3% precision and 100% recall over 33 labelled files** — 13 true positives and 20 true
 negatives, each carrying a written reason for its label in `tests/corpus/manifest.yml`.
 That is the only accuracy figure this project publishes, because it is the only one it can
 reproduce.
 
 The single false positive is AG008, described below.
 
-The corpus is small. 12 of its 18 true negatives were drawn from false positives observed
-on real projects; the other 6 were written deliberately to cover awkward cases — a
-credential in a docstring, `eval` on a literal, `subprocess` with a fixed argument vector.
-It is a regression harness, not a population sample: a precision figure over 31 files is
-evidence that known defects stay fixed, not a prediction about your repository.
+The corpus is small. 12 of its 20 true negatives were drawn from false positives observed
+on real projects; the other 8 were written deliberately to cover awkward cases — a
+credential in a docstring, `eval` on a literal, `subprocess` with a fixed argument vector,
+a `.env` full of shell interpolation.
+
+**This figure is a regression gate, not a precision estimate.** It says known defects stay
+fixed on 33 files chosen partly because they once broke. It is not a prediction about your
+repository, and it would be dishonest to read it as one — a corpus this size cannot support
+that claim, and a corpus whose negatives were selected from observed failures is biased
+towards passing by construction.
 
 There is also a [labelled dataset](datasets/field-2026-07-29/) of 73 findings from five
 real agent projects. It is **not** an accuracy claim: it is not reproducible from this

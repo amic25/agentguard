@@ -52,7 +52,15 @@ class HardcodedSecretRule(Rule):
             re.compile(r"(?i)(?:api[_-]?key|secret|token|password)\s*[:=]\s*['\"]([^'\"]{12,})['\"]"),
         ),
     )
-    _placeholder = re.compile(r"(?i)(example|dummy|test|changeme|your[_-]|xxx|<|\$\{|process\.env)")
+    #: Value shapes that are placeholders rather than credentials. `^\$` and `\$\{` both
+    #: matter: `${VAR}` and a bare `$VAR` are references to a value held elsewhere, and a
+    #: bare one was reported as a critical secret until a corpus case caught it. The
+    #: `replace|insert|redacted` group covers template conventions that carry no marker
+    #: word of their own - `sk-proj-replace-this-before-running` matched nothing before.
+    _placeholder = re.compile(
+        r"(?i)(example|dummy|test|changeme|your[_-]|xxx|<|\$\{|^\$|process\.env"
+        r"|replace|placeholder|redacted|insert[_-]?your|todo|fixme)"
+    )
 
     #: `.env` files conventionally leave values unquoted - `DB_PASSWORD=hunter2`, not
     #: `DB_PASSWORD="hunter2"` - so the quoted assigned-credential pattern misses the

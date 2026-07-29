@@ -93,6 +93,23 @@ true_positives:
       entry claim to pin the downgrade while never reaching it.
 
 true_negatives:
+  .env.local:
+    expect: []
+    why: >-
+      A real .env file, not a template, so the fixture downgrade does not apply and every
+      line must fail to fire on its own merits: commented-out credentials, empty values,
+      braced and unbraced shell interpolation, values under the length floor, and ordinary
+      configuration. The unbraced `$OTHER_TOKEN` form was reported as a critical secret
+      until this case existed - the placeholder filter required braces.
+
+  .env.sample:
+    expect: []
+    why: >-
+      A second template naming convention. `sk-proj-replace-this-before-running` carried no
+      word the placeholder filter recognised and was reported until this case existed. Note
+      the mechanism is the *value*, not the filename: a genuine credential committed to a
+      .env template is a real leak and is still reported, at reduced severity.
+
   .env.example:
     expect: []
     why: >-
