@@ -43,8 +43,13 @@ class RuleMetadata:
     #: If set, the matched line must contain one of these node kinds. `{"call"}` is what
     #: separates `transfer_funds(x)` from `def transfer_funds(x)`.
     require_nodes: frozenset[str] = frozenset()
-    #: Behaviour in test, fixture, and example files.
+    #: Behaviour in test, fixture, example, and vendored files.
     fixture_policy: str = "suppress"
+    #: Longest line this rule is handed. ``None`` inherits the scanner's configured
+    #: bound. ``UNBOUNDED`` (0) opts out of truncation entirely and is only permissible
+    #: for patterns *measured* linear — an unbounded non-linear pattern is a
+    #: denial-of-service vector. Record the measurement when setting it.
+    max_line_length: int | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not self.title:
@@ -68,6 +73,8 @@ class RuleMetadata:
             raise ValueError(
                 f"{self.id}: fixture_policy must be one of {', '.join(sorted(FIXTURE_POLICIES))}"
             )
+        if self.max_line_length is not None and self.max_line_length < 0:
+            raise ValueError(f"{self.id}: max_line_length must be >= 0 (0 means unbounded)")
 
     def applies_to(self, source: SourceFile) -> bool:
         return source.language in self.languages

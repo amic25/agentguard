@@ -868,3 +868,163 @@ Bench delta: none — no code changed.
 Decisions taken alone: ran item 3 out of order, because it is itself a declared stop
 condition and answering it costs minutes; reporting one stop condition while a second was
 knowably true would have wasted a round trip.
+
+---
+
+## Unit 13 — truncation, credential class, vendored paths, corpus repair — 2026-07-29
+
+Status: complete
+Changed: `context.py`, `rules/base.py`, `rules/secrets.py`, `rules/code.py`, `models.py`,
+`scanner.py`, `reporters.py`, `cli.py`, `tools/measure_linearity.py` (new),
+`tests/test_coverage.py` (new), `tests/test_rule_context.py`, `tests/test_redos.py`,
+6 new corpus true negatives, `datasets/field-2026-07-29/` (new), `docs/assets/demo.svg`
+
+Verified:
+```
+ruff format --check src tests tools  → 31 files already formatted
+ruff check src tests tools           → All checks passed!
+mypy src                             → Success: no issues found in 15 source files
+pytest -q                            → 171 passed, 93.37% coverage
+python -m tools.measure_linearity    → all linear, worst exponent 1.02
+```
+
+### Truncation — option (b), with the measurement done first
+
+`tools/measure_linearity.py` measures growth exponent per pattern. **It validates itself
+against the pre-fix cubic AG004 pattern before reporting**; if that control does not come
+back non-linear it exits 2 without printing results. This is the checklist item, applied
+at the point where it matters — the harness that measures whether a pattern is safe to
+run unbounded is the last place a silent pass is acceptable.
+
+```
+control (known-cubic AG004): exponent 2.83 — NON-LINEAR   ← harness registers
+OpenAI API key        1.00   0.19ms@32KB    6.3ms@1MB   linear
+AWS access key        1.00   0.13ms         4.1ms       linear
+GitHub token          1.02   0.18ms         6.1ms       linear
+private key           1.00   0.06ms         2.0ms       linear
+assigned credential   1.00   1.21ms        39.6ms       linear
+```
+
+**No AG001 pattern needs a finite cap.** All declare `UNBOUNDED`; worst case at the 1 MB
+file limit is 40 ms.
+
+Bounds now live in `RuleMetadata.max_line_length`: `None` inherits the configured bound,
+`0` (`UNBOUNDED`) opts out. The scanner sets `source.active_bound` per rule, so a rule
+reads `source.lines` without knowing its own declaration. Only AG001 opts out.
+
+The hole is closed:
+```
+                before          after
+key at    100   detected        detected
+key at  3,000   detected        detected
+key at  5,000   MISSED          detected
+key at 20,000   MISSED          detected
+key at 100,000  (untested)      detected
+```
+
+Coverage is declared, not gated. Every report carries which lines were clipped, by how
+much, against which bound — JSON `coverage`, a Markdown section, SARIF
+`toolExecutionNotifications` at `note` level, terminal summary. `--fail-on-incomplete`
+opts into exit 2. Default exit codes are unchanged.
+
+Coverage reporting uses the **tightest** bound that actually applied, not the loosest.
+With AG001 unbounded and everything else at 4096, `max()` would have reported nothing
+once any rule ran unbounded. Caught while writing it, not by a test.
+
+### Field coverage, now visible
+
+The five projects contain **286 lines that no bounded rule read in full** — 270 in crewAI
+alone, 15 in langgraph. Previously invisible. AG001 reads all of them whole.
+
+### credential_class
+
+`public` caps at Low with a "publishable by design" message and its own remediation
+("no rotation required if this is genuinely the publishable key"). Classified by vendor
+value prefix (`phc_`, `pk_live_`, `pk_test_`) or by the assigned identifier containing
+`public`/`publishable`/`anon`/`client_id`. Enforced centrally in `Scanner._admit`.
+
+Gating findings fell 17 → 15, entirely from the two public keys dropping to Low.
+
+### Vendored paths
+
+`vendor/`, `third_party/`, `site-packages/`, `dist-packages/`, `node_modules/`,
+`bower_components/`, `.venv/`, `eggs/`, `bundled/`, `external/` now downgrade on the same
+footing as fixtures. No field effect here — those paths are in `DEFAULT_EXCLUDES` — but it
+binds when a user overrides excludes, which is when it matters.
+
+### shell=True with an argument list
+
+Now described as what it is: on POSIX the shell receives only `argv[0]` and later
+arguments are silently discarded. Separate message, `defect_class: portability` metadata,
+still reported. `shell=True` with a *string* keeps the injection framing.
+
+### Corpus repair — precision fell, and that is the point
+
+Six field false positives folded in as true negatives.
+
+```
+              precision before   after
+AG001              100.0%       100.0%
+AG002              100.0%        66.7%
+AG003              100.0%        50.0%
+AG004              100.0%       100.0%
+AG005              100.0%        66.7%
+AG006              100.0%        50.0%
+AG007              100.0%       100.0%
+AG008              100.0%        50.0%
+AG010              100.0%       100.0%
+ALL                100.0%        72.2%   recall unchanged at 100%
+```
+
+**This is not a regression. The rules did not get worse; the corpus stopped flattering
+them.** The previous 100% was measured against cases written after the bugs were known —
+teaching to the test. AG003 and AG006 scored 100% while measuring ~98–100% false
+positives in the field; that gap was a corpus validity failure and is now visible.
+
+Five failures are now reproducible in CI and none is fixed:
+`exec_of_module_constant.py` (AG002), `framework_lookup_maps.py` (AG003),
+`path_normaliser.py` (AG005), `fixed_host_requests.py` (AG006),
+`internal_cleanup.py` (AG008). Per the standing loop, each is now a thing the corpus can
+fail on, which is the precondition for calling it fixed later.
+
+### Field dataset
+
+`datasets/field-2026-07-29/` — 73 findings, 16 labelled, 57 explicitly not. Records the
+five upstream commit SHAs, the sampling method, and the same-reader bias in plain terms
+including that all five divergences moved the same direction. States which two judgements
+are most worth disputing, and that the tool now encodes one of them, so if the judgement
+is wrong the tool is wrong. **Not cited in the README and must not be.**
+
+### demo.svg
+
+Baked-in numbers removed (`27 files`, `9 rules in 84ms`, `1 critical · 1 high · 1 medium`)
+rather than generated from bench — the file is hand-authored SVG and a generator is more
+machinery than the claim is worth. Remaining numerals are rule IDs and example line
+numbers in illustrative findings, which are not accuracy claims.
+
+Bench delta: 100.0% → 72.2% precision, recall unchanged at 100%. Stated above.
+Decisions taken alone:
+1. **`--fail-on-incomplete` exits 2, not 1.** Exit 1 means "found problems at threshold";
+   incomplete coverage is not a finding. 2 already means "this result is not a clean bill
+   of health", which is exactly the claim. The default is unchanged, per instruction.
+2. **`publishable_keys.py` is labelled a true positive, not a true negative.** The
+   assertion is about severity, not about whether it fires. Pinned separately by
+   `test_publishable_key_is_capped_at_low`.
+3. **demo.svg numbers removed rather than generated.**
+
+### Repo and PR actions
+
+- Merged Dependabot #3 (`upload-artifact` 4→7). The other five were `BLOCKED`: they
+  predate the `ci-ok` job, so a required context can never report on them, and their
+  `review` runs predate the dependency-graph fix. Requested `@dependabot rebase` on all
+  five; they should go green once rebased onto current main.
+- #12 (`.mts`/`.cts`): commented asking it to declare `languages` and add corpus coverage,
+  explaining that discovery without declaration means fewer rules run, not more.
+- #14 (Google API keys): commented asking for a true-negative corpus case, plus the
+  linearity check now that AG001 runs unbounded, and raising whether referrer-restricted
+  Google keys belong in `credential_class: public`.
+- #13 (GitLab CI): commented that we're taking it, flagged the exit-code change.
+- #15 (GitLab CI, overlapping): replied with credit, named the material it has that #13
+  lacks (report artifacts), invited a rebase as a follow-up. **Not closed.**
+
+Nothing closed. No tag. Work PR not merged.

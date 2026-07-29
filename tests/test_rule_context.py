@@ -235,3 +235,90 @@ def test_a_checkout_under_a_directory_named_test_is_not_all_fixtures(project: Pa
     (root / "src" / "agent.py").write_text('api_key = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
     findings = Scanner(Config()).scan(root).findings
     assert [f.severity for f in findings] == [Severity.CRITICAL]
+
+
+# --- credential class -------------------------------------------------------------------
+
+
+def test_publishable_key_is_capped_at_low(project: Path) -> None:
+    """A PostHog project key ships in client JavaScript. Committing it is not a compromise.
+
+    Measured as a Critical false positive in browser-use and langgraph.
+    """
+    (project / "telemetry.py").write_text(
+        "POSTHOG_PROJECT_API_KEY = 'phc_F8JMNjW1i2KbGUTaW1unnDdLSPCoyc52SGRU0Jeca'\n",
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings, "a publishable key is still worth reporting"
+    assert findings[0].severity == Severity.LOW
+    assert findings[0].metadata["credential_class"] == "public"
+    assert "publishable by design" in findings[0].explanation
+
+
+def test_public_by_name_is_capped_at_low(project: Path) -> None:
+    (project / "constants.py").write_text(
+        'SUPABASE_PUBLIC_API_KEY = "eyJhbGciOiJIUzI1NiJ9.b7Kq2ZmVx9Lp4Rt6Wn3Jc.sig"\n',
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings and findings[0].severity == Severity.LOW
+
+
+def test_an_ordinary_secret_is_not_capped(project: Path) -> None:
+    """The cap must not swallow the case the rule exists for."""
+    (project / "config.py").write_text('DATABASE_PASSWORD = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings[0].severity == Severity.CRITICAL
+    assert findings[0].metadata["credential_class"] == "secret"
+
+
+# --- vendored paths ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["vendor/dep.py", "third_party/dep.py", "lib/site-packages/dep.py", "bundled/dep.py"],
+)
+def test_vendored_paths_are_recognised(project: Path, relative: str) -> None:
+    path = project / relative
+    assert SourceFile(path, project, "", "python").is_vendored
+
+
+def test_findings_in_vendored_code_are_downgraded(project: Path) -> None:
+    """A finding in someone else's release is not actionable where it is reported."""
+    vendored = project / "vendor" / "dep"
+    vendored.mkdir(parents=True)
+    (vendored / "runner.py").write_text("import os\n\n\ndef r(c):\n    os.system(c)\n", encoding="utf-8")
+    assert "AG002" not in _rules(Scanner(Config()).scan(project).findings)
+
+
+def test_first_party_code_is_unaffected_by_the_vendored_rule(project: Path) -> None:
+    src = project / "src"
+    src.mkdir()
+    (src / "runner.py").write_text("import os\n\n\ndef r(c):\n    os.system(c)\n", encoding="utf-8")
+    assert "AG002" in _rules(Scanner(Config()).scan(project).findings)
+
+
+# --- shell=True with an argument list ---------------------------------------------------
+
+
+def test_shell_true_with_a_list_describes_the_portability_bug(project: Path) -> None:
+    """POSIX passes only argv[0] to the shell. That is the defect, not injection."""
+    (project / "cli.py").write_text(
+        'import subprocess\n\n\ndef v(cmd):\n    subprocess.run([cmd, "--version"], shell=True)\n',
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG002"]
+    assert findings, "still reported - it is a real defect"
+    assert "argument list" in findings[0].explanation
+    assert "silently discarded" in findings[0].risk
+    assert findings[0].metadata["defect_class"] == "portability"
+
+
+def test_shell_true_with_a_string_is_still_an_injection_finding(project: Path) -> None:
+    (project / "cli.py").write_text(
+        "import subprocess\n\n\ndef v(cmd):\n    subprocess.run(cmd, shell=True)\n", encoding="utf-8"
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG002"]
+    assert findings and "no enforceable command boundary" in findings[0].explanation

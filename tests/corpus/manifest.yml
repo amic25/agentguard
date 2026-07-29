@@ -159,3 +159,50 @@ true_negatives:
     why: >-
       Fully pinned dependencies are the state AG010 asks for. Fictional package names, for
       the same reason as the true_positives counterpart.
+
+  # --- folded back from field measurement -------------------------------------------
+  # Every entry below reproduces a false positive found by scanning real agent projects,
+  # not one invented while reading the rules. The corpus previously scored AG003 and
+  # AG006 at 100% precision while they were ~98-100% false positives in the field; that
+  # gap was a corpus validity failure. Adding these makes the number fall, and the lower
+  # number is the honest one.
+
+  framework_lookup_maps.py:
+    expect: []
+    why: >-
+      A local variable named `function_map` is not AutoGen's function_map parameter.
+      Measured twice in openai-agents-python. AG003 currently fires; this is expected to
+      show as a false positive until the pattern is narrowed.
+
+  fixed_host_requests.py:
+    expect: []
+    why: >-
+      Compile-time host, TLS, explicit timeout. AG006 matches any first argument named
+      `url` regardless of provenance. Measured twice in crewAI.
+
+  exec_of_module_constant.py:
+    expect: []
+    why: >-
+      exec over a module-level constant has no attacker-controlled input. Distinct from
+      eval_on_literal.py, where the argument is a literal and is already handled: here it
+      is a Name, so literal detection does not catch it. Measured in browser-use.
+
+  path_normaliser.py:
+    expect: []
+    why: >-
+      `path = "/" + path` prefixes a slash; it does not grant a filesystem root. Measured
+      in crewAI.
+
+  internal_cleanup.py:
+    expect: []
+    why: >-
+      Deleting a temp file the code itself created is not a consequential side effect on
+      user data, and the path is not agent-controlled. Measured in crewAI.
+
+  publishable_keys.py:
+    expect: [AG001]
+    why: >-
+      Publishable keys must still be reported - the publishable and secret halves are easy
+      to confuse - but capped at Low, so this is a true positive whose *severity* is the
+      assertion. Pinned by tests/test_rule_context.py::test_publishable_key_is_capped_at_low.
+      Measured as Critical false positives in browser-use and langgraph.

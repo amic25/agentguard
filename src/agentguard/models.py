@@ -63,6 +63,29 @@ class Finding:
         return data
 
 
+@dataclass(frozen=True, slots=True)
+class TruncatedLine:
+    """A line some rule was not shown in full, and by how much."""
+
+    path: Path
+    line: int
+    length: int
+    bound: int
+
+    def to_dict(self, root: Path | None = None) -> dict[str, Any]:
+        path = self.path
+        if root:
+            with suppress(ValueError):
+                path = path.relative_to(root)
+        return {
+            "path": path.as_posix(),
+            "line": self.line,
+            "length": self.length,
+            "bound": self.bound,
+            "withheld": self.length - self.bound,
+        }
+
+
 @dataclass(slots=True)
 class ScanResult:
     """Aggregate result of one scan."""
@@ -72,9 +95,24 @@ class ScanResult:
     files_scanned: int
     rules_run: int
     skipped_files: int = 0
-    truncated_lines: int = 0
+    truncated: list[TruncatedLine] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     duration_ms: float = 0.0
+
+    @property
+    def truncated_lines(self) -> int:
+        """Count of lines withheld in full from at least one rule."""
+        return len(self.truncated)
+
+    @property
+    def fully_covered(self) -> bool:
+        """True when every rule saw every in-scope line in full.
+
+        Distinct from :attr:`completed`. A scan can finish cleanly and still not have
+        looked at everything, which is why truncation is reported rather than silently
+        folded into success.
+        """
+        return not self.truncated
 
     @property
     def completed(self) -> bool:

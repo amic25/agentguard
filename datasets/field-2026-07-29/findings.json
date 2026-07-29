@@ -1,0 +1,732 @@
+[
+  {
+    "project": "browser-use",
+    "rule_id": "AG002",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "browser_use/mcp/cli_mcp.py",
+    "line": 105,
+    "label": "false_positive",
+    "rationale": "exec over a module-level constant; no attacker-controlled input"
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG002",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "browser_use/mcp/cli_mcp.py",
+    "line": 128,
+    "label": "true_positive",
+    "rationale": "exec(code, ns) where code is MCP tool input"
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "browser_use/telemetry/service.py",
+    "line": 21,
+    "label": "false_positive",
+    "rationale": "PostHog phc_ is a public write-only ingest key; committed but not compromisable"
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/security/test_sensitive_data.py",
+    "line": 379,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/security/test_sensitive_data.py",
+    "line": 401,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/security/test_sensitive_data.py",
+    "line": 437,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/security/test_sensitive_data.py",
+    "line": 512,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/security/test_sensitive_data.py",
+    "line": 538,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/test_beta_agent.py",
+    "line": 3472,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/test_beta_agent.py",
+    "line": 3476,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/test_beta_agent.py",
+    "line": 3480,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/test_beta_agent.py",
+    "line": 3484,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "browser-use",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/ci/test_beta_agent.py",
+    "line": 3492,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "langgraph",
+    "rule_id": "AG001",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "libs/cli/langgraph_cli/constants.py",
+    "line": 5,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "langgraph",
+    "rule_id": "AG001",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "libs/sdk-py/langgraph_sdk/auth/types.py",
+    "line": 341,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "langgraph",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "libs/sdk-py/tests/test_skip_auto_load_api_key.py",
+    "line": 37,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "langgraph",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "libs/sdk-py/tests/test_skip_auto_load_api_key.py",
+    "line": 66,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG002",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "src/mcp/cli/cli.py",
+    "line": 48,
+    "label": "false_positive",
+    "rationale": "shell=True with a constant argv list; portability bug, not injection"
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "docs_src/identity_assertion/tutorial001.py",
+    "line": 57,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "docs_src/identity_assertion/tutorial002.py",
+    "line": 29,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "examples/snippets/clients/identity_assertion_client.py",
+    "line": 63,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "examples/snippets/servers/identity_assertion_server.py",
+    "line": 59,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "examples/stories/identity_assertion/server.py",
+    "line": 23,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "examples/stories/oauth_client_credentials/server.py",
+    "line": 20,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/client/auth/extensions/test_client_credentials.py",
+    "line": 320,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/docs_src/test_identity_assertion.py",
+    "line": 73,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/interaction/auth/test_bearer.py",
+    "line": 37,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/server/auth/middleware/test_bearer_auth.py",
+    "line": 97,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "python-sdk",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/server/auth/middleware/test_bearer_auth.py",
+    "line": 108,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG003",
+    "severity": "High",
+    "confidence": "high",
+    "path": "src/agents/realtime/session.py",
+    "line": 954,
+    "label": "false_positive",
+    "rationale": "local dict named function_map"
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG008",
+    "severity": "High",
+    "confidence": "medium",
+    "path": "src/agents/run_internal/tool_actions.py",
+    "line": 891,
+    "label": "true_positive_weak",
+    "rationale": "agent-driven apply_patch delete"
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG003",
+    "severity": "High",
+    "confidence": "high",
+    "path": "src/agents/run_internal/turn_resolution.py",
+    "line": 1744,
+    "label": "false_positive",
+    "rationale": "local named function_map"
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG008",
+    "severity": "High",
+    "confidence": "medium",
+    "path": "src/agents/sandbox/capabilities/tools/apply_patch_tool.py",
+    "line": 223,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/experiemental/codex/test_codex_tool.py",
+    "line": 1812,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/memory/test_advanced_sqlite_session.py",
+    "line": 168,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/memory/test_advanced_sqlite_session.py",
+    "line": 1489,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/sandbox/test_cloudflare.py",
+    "line": 478,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/sandbox/test_daytona.py",
+    "line": 269,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/sandbox/test_runloop.py",
+    "line": 1631,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/sandbox/test_runloop.py",
+    "line": 1875,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/extensions/sandbox/test_vercel.py",
+    "line": 2711,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/sandbox/test_docker.py",
+    "line": 2049,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/sandbox/test_docker.py",
+    "line": 2050,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/sandbox/test_memory.py",
+    "line": 1514,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/sandbox/test_mounts.py",
+    "line": 328,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/test_agent_as_tool.py",
+    "line": 2482,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/test_agent_runner.py",
+    "line": 2790,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/test_error_logging_redaction.py",
+    "line": 56,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "openai-agents-python",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "tests/test_function_tool.py",
+    "line": 890,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG002",
+    "severity": "Critical",
+    "confidence": "high",
+    "path": "lib/crewai/src/crewai/flow/runtime/_actions.py",
+    "line": 274,
+    "label": "true_positive",
+    "rationale": "exec(compile(...)) of a flow script"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG008",
+    "severity": "High",
+    "confidence": "medium",
+    "path": "lib/cli/src/crewai_cli/cli.py",
+    "line": 607,
+    "label": "false_positive",
+    "rationale": "human-typed CLI command, not agent-autonomous"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG008",
+    "severity": "High",
+    "confidence": "medium",
+    "path": "lib/crewai-tools/src/crewai_tools/tools/daytona_sandbox_tool/daytona_file_tool.py",
+    "line": 274,
+    "label": "true_positive_weak",
+    "rationale": "agent-invocable delete, sandboxed"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG008",
+    "severity": "High",
+    "confidence": "medium",
+    "path": "lib/crewai-tools/src/crewai_tools/tools/daytona_sandbox_tool/daytona_file_tool.py",
+    "line": 366,
+    "label": "false_positive",
+    "rationale": "internal temp-file cleanup"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG003",
+    "severity": "High",
+    "confidence": "high",
+    "path": "lib/crewai/src/crewai/crew.py",
+    "line": 1502,
+    "label": "false_positive",
+    "rationale": "framework setting delegation on its own manager agent"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG003",
+    "severity": "High",
+    "confidence": "high",
+    "path": "lib/crewai/src/crewai/crew.py",
+    "line": 1520,
+    "label": "false_positive",
+    "rationale": "framework constructing its own manager agent"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG005",
+    "severity": "High",
+    "confidence": "high",
+    "path": "lib/crewai/src/crewai/memory/utils.py",
+    "line": 61,
+    "label": "false_positive",
+    "rationale": "path = \"/\" + path is normalisation"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG006",
+    "severity": "Medium",
+    "confidence": "high",
+    "path": "lib/crewai-tools/src/crewai_tools/tools/contextualai_query_tool/contextual_query_tool.py",
+    "line": 49,
+    "label": "false_positive",
+    "rationale": "fixed host, TLS, timeout"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG006",
+    "severity": "Medium",
+    "confidence": "high",
+    "path": "lib/crewai-tools/src/crewai_tools/tools/merge_agent_handler_tool/merge_agent_handler_tool.py",
+    "line": 97,
+    "label": "false_positive",
+    "rationale": "fixed host, timeout"
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai-tools/tests/tools/brave_search_tool_test.py",
+    "line": 102,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai-tools/tests/tools/singlestore_search_tool_test.py",
+    "line": 326,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai-tools/tests/tools/stagehand_tool_test.py",
+    "line": 225,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai-tools/tests/tools/stagehand_tool_test.py",
+    "line": 227,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/a2a/test_a2a_integration.py",
+    "line": 208,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/agents/test_agent.py",
+    "line": 2116,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/llms/hooks/test_openai_interceptor.py",
+    "line": 217,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/llms/openai_compatible/test_openai_compatible.py",
+    "line": 152,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/skills/test_registry.py",
+    "line": 513,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 33,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 61,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 90,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 103,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 173,
+    "label": null,
+    "rationale": null
+  },
+  {
+    "project": "crewAI",
+    "rule_id": "AG001",
+    "severity": "Medium",
+    "confidence": "low",
+    "path": "lib/crewai/tests/test_context.py",
+    "line": 214,
+    "label": null,
+    "rationale": null
+  }
+]

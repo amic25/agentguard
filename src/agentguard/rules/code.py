@@ -72,7 +72,27 @@ class DangerousExecutionRule(Rule):
                 # which is how a scanner earns being switched off.
                 if call.args and all(_is_literal(argument) for argument in call.args) and not shell:
                     continue
-                if name in {"eval", "exec", "os.system"} or shell:
+                if shell and call.args and isinstance(call.args[0], ast.List | ast.Tuple):
+                    # shell=True with an argument *vector* is a portability bug, not an
+                    # injection: POSIX passes only argv[0] to the shell and silently drops
+                    # the rest, while Windows joins them. Describing it as an injection
+                    # risk sends readers looking for untrusted input that is not there -
+                    # measured as a false positive in modelcontextprotocol/python-sdk.
+                    yield self.finding(
+                        source,
+                        call.lineno,
+                        f"`{name}` passes an argument list with `shell=True`.",
+                        "The two are mutually exclusive: on POSIX the shell receives only the first "
+                        "element and every later argument is silently discarded, so the command runs "
+                        "differently - or not at all - depending on the platform.",
+                        "Drop `shell=True` and keep the argument list, which is also the safer form. "
+                        "Only if a shell is genuinely required, pass a single string instead, and then "
+                        "treat every interpolated value as untrusted.",
+                        column=call.col_offset + 1,
+                        confidence="high",
+                        metadata={"defect_class": "portability"},
+                    )
+                elif name in {"eval", "exec", "os.system"} or shell:
                     yield self.finding(
                         source,
                         call.lineno,

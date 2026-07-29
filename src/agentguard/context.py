@@ -21,11 +21,24 @@ _FIXTURE_PATH = re.compile(
 )
 _FIXTURE_NAME = re.compile(r"(?i)^(?:test_.*|.*_test|conftest|.*\.spec|.*\.test)$")
 
+#: Paths holding code this project did not write and does not ship as its own. Findings
+#: here are almost always about somebody else's release, and are not actionable in the
+#: repository being scanned. Downgraded on the same footing as fixtures.
+_VENDORED_PATH = re.compile(
+    r"(?i)(?:^|/)(?:vendor|vendored|third[_-]?party|site-packages|dist-packages|"
+    r"node_modules|bower_components|\.venv|venv|eggs|\.eggs|bundled|external)(?:/|$)"
+)
+
 #: Longest line handed to a line-oriented rule. Past this, a "line" is a minified bundle
 #: or generated data, not something a per-line regex can say anything useful about, and
 #: it is the input that turns an ill-behaved pattern into a denial of service. Bounding
 #: the input bounds every regex rule at once, including ones not yet written.
 DEFAULT_MAX_LINE_LENGTH = 4096
+
+#: A rule may declare this as its own bound to opt out of truncation entirely. Only for
+#: patterns *measured* linear — see tools/measure_linearity.py and docs/DECISIONS.md.
+#: An unbounded non-linear pattern is a denial-of-service vector.
+UNBOUNDED = 0
 
 
 @dataclass(slots=True)
@@ -39,9 +52,39 @@ class SourceFile:
     max_line_length: int = DEFAULT_MAX_LINE_LENGTH
     _tree: ast.AST | None = field(default=None, init=False, repr=False)
     _parsed: bool = field(default=False, init=False, repr=False)
-    _lines: list[str] | None = field(default=None, init=False, repr=False)
+    _raw_lines: list[str] | None = field(default=None, init=False, repr=False)
+    _bounded: dict[int, list[str]] = field(default_factory=dict, init=False, repr=False)
     _regions: Regions | None = field(default=None, init=False, repr=False)
-    truncated_lines: int = field(default=0, init=False)
+    #: The bound in force for the rule currently running. Seeded from
+    #: :attr:`max_line_length` and reset by the scanner before each rule, so a rule reads
+    #: `source.lines` without having to know its own declaration.
+    active_bound: int = field(default=DEFAULT_MAX_LINE_LENGTH, init=False)
+
+    def __post_init__(self) -> None:
+        self.active_bound = self.max_line_length
+
+    @property
+    def raw_lines(self) -> list[str]:
+        """Physical lines, untruncated. Computed once."""
+        if self._raw_lines is None:
+            self._raw_lines = self.content.splitlines()
+        return self._raw_lines
+
+    def lines_bounded(self, bound: int) -> list[str]:
+        """Lines capped at ``bound`` characters. ``UNBOUNDED`` returns them whole.
+
+        Truncation preserves the line *count*, so reported line numbers stay correct.
+        """
+        if bound not in self._bounded:
+            raw = self.raw_lines
+            self._bounded[bound] = raw if bound <= 0 else [line[:bound] for line in raw]
+        return self._bounded[bound]
+
+    def over_bound(self, bound: int) -> list[tuple[int, int]]:
+        """``(line_number, length)`` for lines longer than ``bound``. Empty if unbounded."""
+        if bound <= 0:
+            return []
+        return [(n, len(line)) for n, line in enumerate(self.raw_lines, 1) if len(line) > bound]
 
     @property
     def is_fixture(self) -> bool:
@@ -68,6 +111,21 @@ class SourceFile:
             or _FIXTURE_NAME.match(self.path.stem)
         )
 
+    @property
+    def is_vendored(self) -> bool:
+        """True for dependency and vendored-code paths.
+
+        A finding in `site-packages/` or `vendor/` is about someone else's release. It
+        may be real, but it is not actionable where it is reported, and it drowns the
+        findings that are. Downgraded on the same footing as fixtures.
+        """
+        try:
+            relative = self.relative_path.as_posix()
+        except ValueError:  # pragma: no cover - path outside root
+            relative = self.path.as_posix()
+        rooted = f"{self.root.name}/{relative}" if self.root.name else relative
+        return bool(_VENDORED_PATH.search(relative) or _VENDORED_PATH.search(rooted))
+
     def regions(self) -> Regions:
         """Comment, string, docstring, and annotation spans, computed once per file."""
         if self._regions is None:
@@ -81,20 +139,14 @@ class SourceFile:
 
     @property
     def lines(self) -> list[str]:
-        """Physical lines, each bounded by :attr:`max_line_length`.
+        """Lines as the currently running rule should see them.
 
-        Truncation preserves the line *count*, so reported line numbers stay correct.
-        :attr:`truncated_lines` records how much was withheld, because a bounded scan
-        that reports nothing must not be mistaken for a clean one.
-
-        Computed once. Rules call this in a loop and there are nine of them.
+        The bound comes from that rule's declaration, applied by the scanner, so a rule
+        never asks for it. A rule whose patterns are measured linear declares
+        :data:`UNBOUNDED` and sees minified bundles whole — which is where inlined
+        credentials live.
         """
-        if self._lines is None:
-            raw = self.content.splitlines()
-            limit = self.max_line_length
-            self.truncated_lines = sum(1 for line in raw if len(line) > limit)
-            self._lines = [line[:limit] for line in raw] if self.truncated_lines else raw
-        return self._lines
+        return self.lines_bounded(self.active_bound)
 
     @property
     def relative_path(self) -> Path:

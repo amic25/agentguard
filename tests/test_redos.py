@@ -140,7 +140,8 @@ def test_long_lines_are_bounded_and_the_bound_is_reported(project) -> None:  # t
 def test_line_bound_applies_to_rule_input(project) -> None:  # type: ignore[no-untyped-def]
     source = SourceFile(project / "x.py", project, "b" * 100 + "\nshort\n", "python", max_line_length=10)
     assert [len(line) for line in source.lines] == [10, 5]
-    assert source.truncated_lines == 1
+    assert source.over_bound(10) == [(1, 100)]
+    assert source.lines_bounded(0) == ["b" * 100, "short"], "UNBOUNDED returns lines whole"
 
 
 def test_line_bound_preserves_line_numbering(project) -> None:  # type: ignore[no-untyped-def]

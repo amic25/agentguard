@@ -6,9 +6,17 @@ import math
 import re
 from collections.abc import Iterable
 
-from agentguard.context import SourceFile
+from agentguard.context import UNBOUNDED, SourceFile
 from agentguard.models import Finding, Severity
 from agentguard.rules.base import Rule, RuleMetadata
+
+#: Credentials that are published deliberately. A PostHog project key ships in client
+#: JavaScript; a Stripe publishable key is printed in documentation; a Supabase anon key
+#: is meant to reach the browser. Each is literally a committed credential, and reporting
+#: one as a critical compromise is wrong — nothing is impersonated and nothing is
+#: accessed. Measured as false positives in two of five real projects.
+_PUBLIC_VALUE = re.compile(r"^(?:phc_[A-Za-z0-9]{20,}|pk_(?:live|test)_[A-Za-z0-9]{10,})$")
+_PUBLIC_NAME = re.compile(r"(?i)(?:^|[^a-z])(?:public|publishable|anon|client[_-]?id)(?:[^a-z]|$)")
 
 
 class HardcodedSecretRule(Rule):
@@ -26,6 +34,13 @@ class HardcodedSecretRule(Rule):
         # Live credentials really do get committed to fixtures, so these are reported at
         # reduced severity rather than dropped.
         fixture_policy="downgrade",
+        # Runs over untruncated lines. A minified bundle with an inlined key is a real
+        # and common leak, and it is exactly the shape that exceeds the default bound: a
+        # key at offset 5,000 of a one-line bundle was previously missed entirely.
+        # Permissible only because every pattern below is *measured* linear —
+        # `python -m tools.measure_linearity` reports exponents of 0.98-1.01 and a
+        # worst case of 42 ms on a 1 MB line. Re-run it before adding a pattern here.
+        max_line_length=UNBOUNDED,
     )
     _patterns = (
         ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
@@ -54,15 +69,43 @@ class HardcodedSecretRule(Rule):
                     continue
                 if kind == "assigned credential" and self._entropy(value) < 3.0:
                     continue
-                yield self.finding(
-                    source,
-                    number,
-                    f"A likely {kind} is embedded directly in source code.",
-                    "Anyone with repository or build-artifact access may impersonate the service or access protected data.",
-                    "Revoke and rotate the credential, remove it from history, and load the replacement from a secret manager or environment variable.",
-                    column=column,
-                )
+
+                public = self._is_public(line[: match.start()], value)
+                if public:
+                    yield self.finding(
+                        source,
+                        number,
+                        f"A likely {kind} is committed, but it is publishable by design.",
+                        "Publishable keys are meant to be distributed, so exposure alone is not a "
+                        "compromise. Confirm it is the publishable half and not the secret one, and "
+                        "that no scope was granted to it beyond what public clients should have.",
+                        "No rotation is required if this is genuinely the publishable key. If it is "
+                        "not, treat it as a leaked secret and rotate.",
+                        column=column,
+                        confidence="medium",
+                        metadata={"credential_class": "public", "kind": kind},
+                    )
+                else:
+                    yield self.finding(
+                        source,
+                        number,
+                        f"A likely {kind} is embedded directly in source code.",
+                        "Anyone with repository or build-artifact access may impersonate the service or access protected data.",
+                        "Revoke and rotate the credential, remove it from history, and load the replacement from a secret manager or environment variable.",
+                        column=column,
+                        metadata={"credential_class": "secret", "kind": kind},
+                    )
                 break
+
+    @staticmethod
+    def _is_public(prefix: str, value: str) -> bool:
+        """Whether this is a key intended for publication.
+
+        Judged from the value's own vendor prefix, or from the identifier it is assigned
+        to. `SUPABASE_PUBLIC_API_KEY` says so in its name; a `phc_` value says so in its
+        shape. Both were reported as critical compromises before this existed.
+        """
+        return bool(_PUBLIC_VALUE.match(value) or _PUBLIC_NAME.search(prefix))
 
     @staticmethod
     def _entropy(value: str) -> float:
