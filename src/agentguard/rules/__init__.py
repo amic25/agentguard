@@ -10,7 +10,7 @@ from agentguard.rules.code import (
     RiskyExternalAPIRule,
     UnsafeFileAccessRule,
 )
-from agentguard.rules.dependencies import UnpinnedDependencyRule, VulnerableDependencyRule
+from agentguard.rules.dependencies import UnpinnedDependencyRule
 from agentguard.rules.secrets import HardcodedSecretRule
 
 BUILTIN_RULES: tuple[type[Rule], ...] = (
@@ -22,7 +22,6 @@ BUILTIN_RULES: tuple[type[Rule], ...] = (
     RiskyExternalAPIRule,
     MissingValidationRule,
     HumanApprovalRule,
-    VulnerableDependencyRule,
     UnpinnedDependencyRule,
 )
 

@@ -24,7 +24,6 @@ classifiers = [
   "Topic :: Security",
 ]
 dependencies = [
-  "packaging>=24.0",
   "pyyaml>=6.0.1",
   "rich>=13.7",
   "typer>=0.12",
@@ -53,11 +52,13 @@ Changelog = "https://github.com/amic25/agentguard/blob/main/CHANGELOG.md"
 packages = ["src/agentguard"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/docs", "/README.md", "/LICENSE", "/pyproject.toml", "/CHANGELOG.md"]
+include = ["/src", "/tests", "/tools", "/docs", "/README.md", "/LICENSE", "/pyproject.toml", "/CHANGELOG.md"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --cov=agentguard --cov-report=term-missing --cov-fail-under=85"
 testpaths = ["tests"]
+norecursedirs = ["tests/corpus"]
+pythonpath = ["."]
 
 [tool.coverage.run]
 branch = true
@@ -70,6 +71,10 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
 target-version = "py310"
 line-length = 110
 src = ["src", "tests"]
+# The corpus is scanner input, not project code. Its files deliberately contain the
+# constructs the rules look for, including undefined names and unsafe calls, and
+# reformatting them would silently change what is being measured.
+extend-exclude = ["tests/corpus"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]

@@ -17,6 +17,6 @@
     <text x="36" y="438" fill="#fbbf24" font-weight="700">MEDIUM</text><text x="170" y="438" fill="#f8fafc">AG007  Tool input lacks validation</text>
     <text x="170" y="470" fill="#94a3b8">tools.ts:17  Tool definition has no nearby input schema.</text>
     <text x="170" y="502" fill="#67e8f9">Fix: attach a strict JSON Schema and reject unknown fields.</text>
-    <text x="36" y="566" fill="#94a3b8">Scanned</text><text x="132" y="566" fill="#f8fafc" font-weight="700">27 files</text><text x="240" y="566" fill="#94a3b8">with 10 rules in 84ms ·</text><text x="530" y="566" fill="#fb7185">1 critical · 1 high</text><text x="765" y="566" fill="#fbbf24">· 1 medium</text>
+    <text x="36" y="566" fill="#94a3b8">Scanned</text><text x="132" y="566" fill="#f8fafc" font-weight="700">27 files</text><text x="240" y="566" fill="#94a3b8">with 9 rules in 84ms ·</text><text x="530" y="566" fill="#fb7185">1 critical · 1 high</text><text x="765" y="566" fill="#fbbf24">· 1 medium</text>
   </g>
 </svg>

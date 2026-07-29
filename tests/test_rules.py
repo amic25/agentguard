@@ -6,6 +6,7 @@ import pytest
 
 from agentguard.config import Config
 from agentguard.models import Severity
+from agentguard.rules import BUILTIN_RULES
 from agentguard.scanner import Scanner
 
 
@@ -20,7 +21,6 @@ from agentguard.scanner import Scanner
         ("agent.py", 'requests.get("http://insecure.example/api")', "AG006"),
         ("agent.py", "@tool\ndef lookup(value):\n    return value", "AG007"),
         ("agent.py", "def act():\n    transfer_funds(amount)", "AG008"),
-        ("requirements.txt", "langchain==0.1.0", "AG009"),
         ("requirements.txt", "langchain", "AG010"),
         ("agent.ts", "execSync(command)", "AG002"),
         ("agent.ts", "const prompt = `Read ${web_content}`", "AG004"),
@@ -82,20 +82,14 @@ def test_missing_target_raises(project: Path) -> None:
         Scanner().scan(project / "missing")
 
 
-@pytest.mark.parametrize(
-    ("dependency", "version", "detected"),
-    [
-        ("axios", "1.3.1", False),
-        ("axios", "1.7.2", True),
-        ("axios", "1.7.4", False),
-        ("langchain-community", "0.0.27", True),
-        ("langchain-community", "0.0.28", False),
-        ("openai", "1.0.0", False),
-    ],
-)
-def test_advisory_boundaries(project: Path, dependency: str, version: str, detected: bool) -> None:
-    (project / "package.json").write_text(
-        f'{{"dependencies": {{"{dependency}": "{version}"}}}}', encoding="utf-8"
-    )
+def test_ag009_is_retired_and_never_reissued(project: Path) -> None:
+    """AG009 was removed, not renamed. The identifier stays burned.
+
+    Rule IDs appear in user configs, suppression comments, and stored SARIF alerts, so
+    reusing one silently changes what an existing suppression suppresses. See
+    docs/RULE_IDS.md.
+    """
+    (project / "package.json").write_text('{"dependencies": {"axios": "1.7.2"}}', encoding="utf-8")
     result = Scanner().scan(project)
-    assert ("AG009" in {finding.rule_id for finding in result.findings}) is detected
+    assert "AG009" not in {finding.rule_id for finding in result.findings}
+    assert "AG009" not in {kind.metadata.id for kind in BUILTIN_RULES}

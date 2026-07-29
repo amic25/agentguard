@@ -18,12 +18,29 @@ def _calls(source: SourceFile) -> Iterable[ast.Call]:
 
 
 def _name(node: ast.AST) -> str:
+    """Dotted name of a call target, or "" when the receiver is not a plain name.
+
+    Returning the bare attribute when the receiver is unresolvable made every
+    `something().exec(...)` read as the builtin `exec`. `super().exec(*command)` in a
+    sandbox wrapper was reported as critical arbitrary code execution, twice, in
+    openai-agents-python. An unresolvable receiver means we do not know what is being
+    called, and "do not know" must not resolve to "the most dangerous thing it could be".
+    """
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
         parent = _name(node.value)
-        return f"{parent}.{node.attr}" if parent else node.attr
+        return f"{parent}.{node.attr}" if parent else ""
     return ""
+
+
+def _is_literal(node: ast.expr) -> bool:
+    """True for an expression fixed at author time, with no runtime input."""
+    try:
+        ast.literal_eval(node)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return False
+    return True
 
 
 class DangerousExecutionRule(Rule):
@@ -33,6 +50,7 @@ class DangerousExecutionRule(Rule):
         Severity.CRITICAL,
         "system-access",
         "Detects agent-reachable command execution.",
+        languages=frozenset({"python", "javascript", "typescript"}),
     )
     _js = re.compile(r"\b(?:exec|execSync|spawn|spawnSync)\s*\(")
 
@@ -49,6 +67,11 @@ class DangerousExecutionRule(Rule):
                     and keyword.value.value is True
                     for keyword in call.keywords
                 )
+                # eval("{'retries': 3}") has no attacker-controlled input. Reporting it
+                # teaches readers that the rule cannot tell reachable from unreachable,
+                # which is how a scanner earns being switched off.
+                if call.args and all(_is_literal(argument) for argument in call.args) and not shell:
+                    continue
                 if name in {"eval", "exec", "os.system"} or shell:
                     yield self.finding(
                         source,
@@ -79,6 +102,7 @@ class BroadToolPermissionRule(Rule):
         Severity.HIGH,
         "permissions",
         "Detects tools with unconstrained capabilities.",
+        languages=frozenset({"python", "javascript", "typescript"}),
     )
     _pattern = re.compile(
         r"(?i)(allow_dangerous_code\s*=\s*True|allow_delegation\s*=\s*True|function_map\s*=|tools\s*=\s*\[[^\]]*(?:shell|terminal|filesystem|browser)|allowedTools\s*:\s*\[[^\]]*['\"]\*['\"]|dangerouslyAllowBrowser\s*:\s*true)"
@@ -105,18 +129,39 @@ class PromptInjectionRule(Rule):
         Severity.HIGH,
         "prompt-injection",
         "Detects direct interpolation of external content into prompts.",
+        languages=frozenset({"python", "javascript", "typescript"}),
     )
     _sources = r"(?:request|req|input|user_input|user_message|web_content|document|page|result|tool_output|message\.content)"
-    _patterns = (
-        re.compile(
-            rf"(?i)(?:prompt|system_message|instructions?)\s*=.*(?:f['\"].*\{{{_sources}\}}|\.format\([^)]*{_sources}|\+\s*{_sources})"
-        ),
-        re.compile(rf"(?i)(?:content|prompt)\s*(?::|=)\s*`[^`]*\$\{{{_sources}\}}"),
+
+    # This was one pattern of the form `PREFIX \s*= .* (?: f['"] .* \{SRC\} | ... )`.
+    # Two unbounded `.*` spans nested inside a search meant the engine tried every split
+    # of the second for every split of the first, at every start offset: cubic. A 28 KB
+    # line took 34 seconds, and the file size cap allows 1 MB. Since a scanner runs on
+    # untrusted input, that is a denial-of-service vector, not a tuning problem.
+    #
+    # Python 3.10 has neither atomic groups nor possessive quantifiers, so the nesting is
+    # removed by searching in two steps instead of one. The alternation could only ever
+    # match at or after the end of the assignment prefix, so anchoring the second search
+    # to the first match's end accepts exactly the same set of lines - see
+    # tests/test_redos.py, which asserts that equivalence over a large input corpus.
+    _assignment = re.compile(r"(?i)(?:prompt|system_message|instructions?)\s*=")
+    _interpolations = (
+        re.compile(rf"(?i)f['\"][^\n]*\{{{_sources}\}}"),
+        re.compile(rf"(?i)\.format\([^)]*{_sources}"),
+        re.compile(rf"(?i)\+\s*{_sources}"),
     )
+    # Bounded by a negated class, so linear already; left as one pattern.
+    _template_literal = re.compile(rf"(?i)(?:content|prompt)\s*(?::|=)\s*`[^`]*\$\{{{_sources}\}}")
+
+    def _match(self, line: str) -> re.Match[str] | None:
+        assignment = self._assignment.search(line)
+        if assignment and any(p.search(line, assignment.end()) for p in self._interpolations):
+            return assignment
+        return self._template_literal.search(line)
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         for number, line in enumerate(source.lines, 1):
-            match = next((pattern.search(line) for pattern in self._patterns if pattern.search(line)), None)
+            match = self._match(line)
             if match:
                 yield self.finding(
                     source,
@@ -139,11 +184,17 @@ class UnsafeFileAccessRule(Rule):
         Severity.HIGH,
         "system-access",
         "Detects user-controlled paths and broad filesystem roots.",
+        # Not manifests. `directory: "/"` in a Dependabot config locates a dependency
+        # manifest; it is not filesystem access, and this rule has no business reading
+        # CI configuration at all.
+        languages=frozenset({"python", "javascript", "typescript"}),
     )
     _path_input = re.compile(
         r"(?i)(?:open|readFile|writeFile|unlink|rmtree)\s*\([^\n]*(?:user|input|request|args|tool_call)"
     )
-    _broad = re.compile(r"(?i)(?:root_dir|workspace|directory|path)\s*[:=]\s*['\"](?:/|~|\.\.)['\"]")
+    # \b matters: without it, `path` matched inside `streamable_http_path`, reporting an
+    # HTTP mount point as a broad filesystem root eight times in one real project.
+    _broad = re.compile(r"(?i)\b(?:root_dir|workspace|directory|path)\s*[:=]\s*['\"](?:/|~|\.\.)['\"]")
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         for number, line in enumerate(source.lines, 1):
@@ -166,6 +217,8 @@ class RiskyExternalAPIRule(Rule):
         Severity.MEDIUM,
         "external-api",
         "Detects non-TLS, dynamic, or unbounded outbound requests.",
+        languages=frozenset({"python", "javascript", "typescript"}),
+        require_nodes=frozenset({"call"}),
     )
     _http = re.compile(
         r"(?i)(?:requests\.(?:get|post|put|delete)|fetch|axios\.(?:get|post)|httpx\.(?:get|post))\s*\(\s*['\"]http://"
@@ -196,9 +249,12 @@ class MissingValidationRule(Rule):
         Severity.MEDIUM,
         "validation",
         "Detects agent tools with untyped or unvalidated input.",
+        languages=frozenset({"python", "javascript", "typescript"}),
     )
     _py_decorator = re.compile(r"@(?:tool|function_tool|kernel_function)\b")
-    _js_tool = re.compile(r"(?i)(?:tool|function)\s*\(\s*\{?")
+    # Was `(?:tool|function)\s*\(`, which matched every JavaScript function expression,
+    # including IIFEs in vendored analytics snippets. Only a tool registration is a tool.
+    _js_tool = re.compile(r"(?i)\btool\s*\(\s*\{?")
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         lines = source.lines
@@ -237,6 +293,10 @@ class HumanApprovalRule(Rule):
         Severity.HIGH,
         "privileges",
         "Detects autonomous high-impact operations.",
+        languages=frozenset({"python", "javascript", "typescript"}),
+        # Defining `delete_file` is not deleting a file. Requiring a call on the matched
+        # line was most of this rule's false positives across four of five real projects.
+        require_nodes=frozenset({"call"}),
     )
     _action = re.compile(
         r"(?i)\b(?:send_email|transfer_funds|delete_(?:file|record|account)|deploy|execute_trade|create_user)\s*\("

@@ -1,0 +1,7 @@
+# Dependabot manifest discovery. `directory` is a manifest location, not file access.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"

@@ -1,0 +1,3 @@
+# Fictional package names on purpose - see the true_positives counterpart.
+acme-agent-sdk==1.4.2
+acme-prompt-tools==0.9.1

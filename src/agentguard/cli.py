@@ -83,8 +83,16 @@ def scan(
             threshold = Severity.parse(fail_on)
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--fail-on") from exc
-        if any(finding.severity >= threshold for finding in result.findings):
-            raise typer.Exit(code=1)
+    if not result.completed:
+        # Ranked above --fail-on: CI must be able to tell "found problems" (1) from
+        # "the tool did not finish, so absence of findings means nothing" (2).
+        error_console.print(
+            f"[bold red]Scan incomplete:[/bold red] {len(result.errors)} error(s); "
+            "results are not a clean bill of health."
+        )
+        raise typer.Exit(code=2)
+    if fail_on.lower() != "none" and any(finding.severity >= threshold for finding in result.findings):
+        raise typer.Exit(code=1)
 
 
 @app.command("rules")
@@ -107,10 +115,16 @@ def init_config(
         raise typer.Exit(code=2)
     path.write_text(
         "# AgentGuard configuration\n"
+        "#\n"
+        "# A config discovered in the repository being scanned is treated as untrusted\n"
+        "# input: it may only make a scan stricter. Excludes are added to (never removed\n"
+        "# from) the defaults, max_file_size_kb may only be lowered, and follow_symlinks\n"
+        "# may only be turned off.\n"
+        "#\n"
+        "# plugins, disabled_rules, and severity_overrides can weaken a scan or execute\n"
+        "# code, so they are rejected here. To use them, vouch for this file explicitly:\n"
+        "#     agentguard scan . --config .agentguard.yml\n"
         "exclude:\n  - tests/fixtures/**\n"
-        "disabled_rules: []\n"
-        "severity_overrides: {}\n"
-        "plugins: []\n"
         "max_file_size_kb: 1024\n"
         "follow_symlinks: false\n",
         encoding="utf-8",

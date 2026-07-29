@@ -1,8 +1,10 @@
+# AgentGuard's configuration for scanning itself.
+#
+# A config discovered in the repository under scan is untrusted input and may only
+# tighten a scan, so this file carries no plugins, disabled_rules, or severity_overrides.
+# See docs/SECURITY_MODEL.md.
 exclude:
   - tests/**
   - docs/**
-disabled_rules: []
-severity_overrides: {}
-plugins: []
 max_file_size_kb: 1024
 follow_symlinks: false

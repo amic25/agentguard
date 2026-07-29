@@ -25,10 +25,13 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev]'
-      - run: ruff format --check src tests
-      - run: ruff check src tests
+      - run: ruff format --check src tests tools
+      - run: ruff check src tests tools
       - run: mypy src
       - run: pytest --cov-report=xml
+      # Detection quality is a reviewable number, not a claim. Printed on every run so a
+      # precision or recall change shows up in the diff of two CI logs.
+      - run: python -m tools.bench
       - uses: actions/upload-artifact@v4
         if: matrix.python-version == '3.12'
         with:
@@ -61,3 +64,27 @@ jobs:
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         with:
           sarif_file: agentguard.sarif
+
+  # One stable context summarising this workflow. The matrix publishes
+  # `test (3.10)` ... `test (3.13)`, so every context name here moves whenever the
+  # supported-version list changes, and branch protection has nothing fixed to require.
+  # This job's name does not move.
+  ci-ok:
+    needs: [test, package, agentguard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every dependency to have succeeded
+        run: |
+          echo 'Dependency results:'
+          echo '${{ toJSON(needs) }}'
+          # Anything that is not `success` fails this job. That covers failure,
+          # cancelled, and skipped explicitly, and any future result value by default -
+          # a gate that passes on an unrecognised state is not a gate.
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            if [ "$result" != 'success' ]; then
+              echo "::error::CI is not green: a dependency reported '$result'"
+              exit 1
+            fi
+          done
+          echo 'All dependencies succeeded.'

@@ -1,0 +1,161 @@
+# Labeled corpus for measuring detection quality.
+#
+# `expect` lists every rule ID that MUST fire on the file. Any finding whose rule is not
+# in `expect` is counted as a false positive, and any rule in `expect` that does not fire
+# is a false negative. There is no "don't care" category on purpose: a rule firing on a
+# file nobody thought about is exactly the noise this corpus exists to measure.
+#
+# `why` is required. A label without a reason is an assertion, not evidence, and the next
+# person cannot tell a deliberate expectation from a rubber-stamped one.
+#
+# All credential-shaped values are fabricated and non-live.
+
+true_positives:
+  hardcoded_secrets.py:
+    expect: [AG001]
+    why: >-
+      Four credential shapes assigned in a production module: OpenAI, AWS, GitHub, and a
+      high-entropy password. This is the case the rule exists for.
+
+  command_execution.py:
+    expect: [AG002]
+    why: >-
+      os.system and eval on caller-supplied values, and subprocess with shell=True. Each
+      is a path from model output to arbitrary command execution.
+
+  broad_tool_permissions.py:
+    expect: [AG003]
+    why: >-
+      allow_dangerous_code=True and allow_delegation=True are explicit grants of
+      capability that widen blast radius.
+
+  prompt_injection.py:
+    expect: [AG004]
+    why: >-
+      user_input and web_content interpolated directly into prompt and system_message
+      f-strings, with no separation between data and instructions.
+
+  unsafe_file_access.py:
+    expect: [AG005]
+    why: open() on a caller-controlled path, reachable from tool arguments.
+
+  risky_external_api.py:
+    expect: [AG006]
+    why: A plaintext http:// endpoint, so request and response are interceptable.
+
+  missing_validation.py:
+    expect: [AG007]
+    why: >-
+      A @tool function whose parameter carries no type or schema, so the model may supply
+      any shape it likes.
+
+  missing_approval.py:
+    expect: [AG008]
+    why: >-
+      transfer_funds is called with no approval or confirmation gate anywhere nearby; an
+      injected instruction reaches an irreversible action.
+
+  requirements.txt:
+    expect: [AG010]
+    why: >-
+      Dependencies with no version constraint admit an unreviewed future release. Package
+      names are fictional: a fixture named requirements.txt is ingested by GitHub's
+      dependency graph as a real project manifest, so real names would fail dependency
+      review on every future advisory.
+
+  agent_tools.ts:
+    expect: [AG002]
+    why: execSync on a caller-supplied command in TypeScript.
+
+  root_dir_broad.py:
+    expect: [AG005]
+    why: >-
+      An agent workspace rooted at "/" grants the whole filesystem. Kept as a true
+      positive so that tightening AG005's `path` word boundary is measured rather than
+      assumed harmless.
+
+  test_secrets_fixture.py:
+    expect: [AG001]
+    why: >-
+      Credentials do get committed to test fixtures, so this must still be reported -
+      but at reduced severity and confidence, because credential-shaped literals in tests
+      are usually fixtures. This file exists to pin that downgrade, not to demand silence.
+      Named `test_*` so the downgrade is exercised even when the benchmark scans the file
+      on its own, where no `tests/` path component is visible. The earlier name made this
+      entry claim to pin the downgrade while never reaching it.
+
+true_negatives:
+  .env.example:
+    expect: []
+    why: >-
+      A .env template exists to be committed; its values are placeholders. Includes
+      AKIAIOSFODNN7EXAMPLE, AWS's own documentation key. NOTE: AgentGuard does not
+      currently discover .env files at all, so this entry is recorded by the harness as
+      not-discovered rather than as a pass. It also means a real .env would be missed.
+
+  secrets_in_docstrings.py:
+    expect: []
+    why: >-
+      Doctest examples showing argument shape. Observed in crewAI, where a docstring
+      example was reported as a committed private key.
+
+  eval_on_literal.py:
+    expect: []
+    why: >-
+      eval over a string literal has no attacker-controlled input. Flagging it teaches
+      readers that the rule does not distinguish reachable from unreachable.
+
+  subprocess_fixed_args.py:
+    expect: []
+    why: >-
+      A fixed argument vector with shell=False cannot become an arbitrary command. This
+      is the remediation the AG002 finding text recommends, so flagging it punishes the fix.
+
+  constant_prompt.py:
+    expect: []
+    why: >-
+      The interpolated names are module constants, not untrusted data. No trust boundary
+      is crossed.
+
+  method_named_exec.py:
+    expect: []
+    why: >-
+      super().exec() and self.client().eval() are ordinary method calls. AG002's name
+      resolution dropped the receiver and read both as builtins. Measured twice in
+      openai-agents-python.
+
+  token_annotations.py:
+    expect: []
+    why: >-
+      contextvars.Token[Any] is a type annotation. The AG001 assigned-credential pattern
+      matched `token: "..."` as a credential. Measured twice in openai-agents-python.
+
+  route_paths.py:
+    expect: []
+    why: >-
+      streamable_http_path="/" is an HTTP mount point, not a filesystem root. Measured
+      eight times in modelcontextprotocol/python-sdk.
+
+  dependabot.yml:
+    expect: []
+    why: >-
+      `directory: "/"` locates a dependency manifest. A filesystem-access rule has no
+      business reading CI configuration at all. Measured in three of five projects.
+
+  function_definitions.py:
+    expect: []
+    why: >-
+      Defining delete_file, deploy, or send_email is not performing them. AG008 matched
+      `def` sites, which was most of its findings across four of five projects.
+
+  analytics_iife.js:
+    expect: []
+    why: >-
+      An IIFE is not a tool definition. AG007's JavaScript pattern matches any
+      `function(`. Measured in crewAI's documentation assets.
+
+  requirements.txt:
+    expect: []
+    why: >-
+      Fully pinned dependencies are the state AG010 asks for. Fictional package names, for
+      the same reason as the true_positives counterpart.

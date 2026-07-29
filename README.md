@@ -10,7 +10,7 @@
   [![License](https://img.shields.io/badge/license-Apache--2.0-2563eb)](LICENSE)
 </div>
 
-AgentGuard is an open-source static security scanner for AI agent applications. It looks for leaked secrets, prompt-injection paths, excessive permissions, unsafe system access, weak tool validation, risky outbound calls, missing human approval, and vulnerable dependencies in Python and JavaScript/TypeScript projects.
+AgentGuard is an open-source static security scanner for AI agent applications. It looks for leaked secrets, prompt-injection paths, excessive permissions, unsafe system access, weak tool validation, risky outbound calls, missing human approval, and unpinned dependencies in Python and JavaScript/TypeScript projects.
 
 It is offline-first, CI-friendly, framework-aware, and designed to produce findings a developer can fix—not a wall of vague warnings.
 
@@ -35,7 +35,7 @@ Agent applications combine untrusted natural-language input with credentials, to
 | External APIs | plaintext HTTP, caller-controlled URLs, SSRF paths | `AG006` |
 | Input validation | tools without strict typed or JSON schemas | `AG007` |
 | Agent privileges | consequential actions without approval gates | `AG008` |
-| Dependencies | bundled high-signal advisories and unpinned requirements | `AG009–AG010` |
+| Dependencies | unpinned requirements | `AG010` |
 
 AgentGuard recognizes common patterns from LangChain, CrewAI, AutoGen, OpenAI Agents/API applications, and MCP clients/servers. The rules are framework-tolerant: they inspect the security behavior rather than requiring one exact SDK version.
 
@@ -87,7 +87,17 @@ agentguard init                  # create .agentguard.yml
 agentguard scan src --exclude generated/**
 ```
 
-Exit codes are stable for automation: `0` passed, `1` reached the configured severity threshold, and `2` means the scan could not complete.
+Exit codes are stable for automation:
+
+| Code | Meaning |
+|---|---|
+| `0` | Every enabled rule ran to completion over every in-scope file, and nothing reached the `--fail-on` threshold. |
+| `1` | The scan completed and found at least one finding at or above `--fail-on`. |
+| `2` | The scan did not complete — a rule raised, a file could not be read, or the invocation was invalid. **Findings are not a clean bill of health.** |
+
+`2` outranks `1`: automation must be able to tell "found problems" from "the tool broke". A scan
+that cannot examine a file never reports that file as clean. Files skipped by declared policy
+(`max_file_size_kb`) are counted in the report and do not affect the exit code.
 
 ### GitHub code scanning
 
@@ -107,15 +117,47 @@ Create `.agentguard.yml`:
 ```yaml
 exclude:
   - generated/**
+max_file_size_kb: 1024
+max_line_length: 4096
+follow_symlinks: false
+```
+
+A config file discovered inside the repository being scanned is **untrusted input** — AgentGuard is
+built to run on code you have not read. Such a file may only make a scan stricter: exclusions are
+added to the defaults, `max_file_size_kb` and `max_line_length` may only be lowered, and
+`follow_symlinks` may only be turned off.
+
+`plugins`, `disabled_rules`, and `severity_overrides` can execute code or weaken a scan, so they are
+rejected in a discovered config. To use them, vouch for the file explicitly — this is the operator
+saying "I have read this":
+
+```bash
+agentguard scan . --config .agentguard.yml
+```
+
+```yaml
+# only honoured via --config
 disabled_rules:
   - AG010
 severity_overrides:
   AG006: high
 plugins:
   - company_agent_rules
-max_file_size_kb: 1024
-follow_symlinks: false
 ```
+
+See [Security model](docs/SECURITY_MODEL.md#configuration-trust-boundary) for the full boundary.
+
+### Test, example, and documentation paths
+
+Files under `tests/`, `examples/`, `docs/`, `fixtures/`, and similar are treated as
+fixtures. Credential findings there are reported at `Medium` with `low` confidence rather
+than `Critical` — credentials genuinely do get committed to test fixtures, so they are not
+hidden, but they no longer block the default `--fail-on high` gate. Every other rule is
+suppressed on those paths, because a `delete_file` call in an example is a demonstration.
+
+A rule declares this for itself via `fixture_policy`; see [Plugin authoring](docs/PLUGINS.md#declaring-context).
+
+### Suppressions
 
 Suppress a reviewed false positive on the affected or previous line. Suppressions should explain the compensating control in code review.
 
@@ -130,7 +172,7 @@ Every finding includes severity (`Critical`, `High`, `Medium`, or `Low`), stable
 
 ## Plugins
 
-Custom rules can be loaded from a module in `.agentguard.yml` or distributed as a Python package with an `agentguard.rules` entry point. The API uses the same stable `Rule`, `RuleMetadata`, `SourceFile`, and `Finding` objects as built-ins.
+Custom rules can be loaded from a module named in an operator-supplied config (`--config`), or distributed as a Python package with an `agentguard.rules` entry point. Plugins execute inside the scanner process, so they are never loaded from a config discovered in the repository under scan. The API uses the same stable `Rule`, `RuleMetadata`, `SourceFile`, and `Finding` objects as built-ins.
 
 See [Plugin authoring](docs/PLUGINS.md) for a complete example and packaging instructions.
 
@@ -163,7 +205,7 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) or one 
 ## Roadmap
 
 - Deeper framework data-flow analysis and cross-file call graphs
-- Live OSV advisory mode with a reproducible offline cache
+- Dependency scanning delegated to pip-audit/osv-scanner, normalized into one report ([#16](https://github.com/amic25/agentguard/issues/16))
 - Policy packs for MCP, financial, healthcare, and enterprise agents
 - Baseline/diff scanning for gradual adoption
 - IDE integrations and an LSP
