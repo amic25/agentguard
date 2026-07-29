@@ -147,6 +147,18 @@ plugins:
 
 See [Security model](docs/SECURITY_MODEL.md#configuration-trust-boundary) for the full boundary.
 
+### Test, example, and documentation paths
+
+Files under `tests/`, `examples/`, `docs/`, `fixtures/`, and similar are treated as
+fixtures. Credential findings there are reported at `Medium` with `low` confidence rather
+than `Critical` — credentials genuinely do get committed to test fixtures, so they are not
+hidden, but they no longer block the default `--fail-on high` gate. Every other rule is
+suppressed on those paths, because a `delete_file` call in an example is a demonstration.
+
+A rule declares this for itself via `fixture_policy`; see [Plugin authoring](docs/PLUGINS.md#declaring-context).
+
+### Suppressions
+
 Suppress a reviewed false positive on the affected or previous line. Suppressions should explain the compensating control in code review.
 
 ```python
@@ -193,7 +205,7 @@ Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) or one 
 ## Roadmap
 
 - Deeper framework data-flow analysis and cross-file call graphs
-- Live OSV advisory mode with a reproducible offline cache
+- Dependency scanning delegated to pip-audit/osv-scanner, normalized into one report ([#16](https://github.com/amic25/agentguard/issues/16))
 - Policy packs for MCP, financial, healthcare, and enterprise agents
 - Baseline/diff scanning for gradual adoption
 - IDE integrations and an LSP

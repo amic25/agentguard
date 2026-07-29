@@ -460,3 +460,46 @@ that needs AG003 and AG006 corpus coverage, which the corpus currently lacks (re
 unit 5 as a known limitation).
 
 Next: unit 7 — docs reconciliation, then unit 8 — stop and report.
+
+---
+
+## Unit 7 — documentation reconciliation — 2026-07-29
+
+Status: complete
+Changed: `docs/ARCHITECTURE.md`, `docs/PLUGINS.md`, `ROADMAP.md`, `README.md`, `CHANGELOG.md`
+
+Verified:
+```
+Python 3.10.20  → 142 passed, 1 skipped
+Python 3.11.15  → 142 passed, 1 skipped
+Python 3.12.13  → 142 passed, 1 skipped
+Python 3.13.14  → 142 passed, 1 skipped
+ruff format --check src tests tools  → 29 files already formatted
+ruff check src tests tools           → All checks passed!
+mypy src                             → Success: no issues found in 15 source files
+python -m tools.bench                → 100.0% precision, 100.0% recall
+agentguard scan src --fail-on medium → exit 0
+python -m build --wheel              → Requires-Dist: pyyaml, rich, typer  (packaging gone)
+```
+
+Exit-code semantics (unit 1) and the `SECURITY_MODEL.md` reconciliation (units 1 and 3)
+were written as part of those units rather than deferred here. Remaining work was:
+
+- `ARCHITECTURE.md`: the pipeline description predated the trust boundary, the context
+  gates, the line bound, and the completeness invariant. Added `regions.py` to the module
+  table and three design decisions that were being followed but not written down.
+- `PLUGINS.md`: documented the four declaration fields, with a worked example, plus the
+  ID namespacing rule.
+- `ROADMAP.md`: "establish precision/recall benchmark fixtures" is now done; the OSV items
+  point at #16; "reproducible benchmark suite" replaced with the real remaining gap
+  (corpus coverage for AG003 and AG006).
+- `README.md`: documented fixture-path behaviour, which is user-visible and was not
+  described anywhere.
+
+Checked for unmeasured claims: no accuracy figure, benchmark number, or "detects X"
+appears in the README. The only numbers in the repository are in `WORKLOG.md` and
+`AUDIT.md`, both of which state their method.
+
+Bench delta: none — documentation only.
+Decisions taken alone: none.
+Next: unit 8 — stop and report.
