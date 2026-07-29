@@ -37,18 +37,24 @@ negatives, each carrying a written reason for its label in `tests/corpus/manifes
 That is the only accuracy figure this project publishes, because it is the only one it can
 reproduce.
 
-The single false positive is AG008, described below.
+13 of the 21 true negatives reproduce a false positive observed on a real project; the other
+8 were composed to cover awkward cases — a credential in a docstring, `eval` on a literal,
+`subprocess` with a fixed argument vector, a `.env` full of shell interpolation. Every case
+declares which it is, and `make bench` scores the field-derived subset separately:
 
-The corpus is small. Most of its true negatives were drawn from false positives observed on
-real projects; the rest were written deliberately to cover awkward cases — a credential in a
-docstring, `eval` on a literal, `subprocess` with a fixed argument vector, a `.env` full of
-shell interpolation.
+```
+33 of 34 cases behave as labelled.        # all cases
+12 of 13 cases behave as labelled.        # --field-only
+```
 
-**This figure is a regression gate, not a precision estimate.** It says known defects stay
-fixed on 34 files chosen partly because they once broke. It is not a prediction about your
-repository, and it would be dishonest to read it as one — a corpus this size cannot support
-that claim, and a corpus whose negatives were selected from observed failures is biased
-towards passing by construction.
+The one failure in both is AG008, described below.
+
+**This is a regression gate, not a precision estimate.** It says known defects stay fixed
+on 34 cases chosen partly because they once broke. It is not a prediction about your
+repository and should not be read as one: a corpus this size cannot support that claim, and
+a corpus whose negatives were selected from observed failures is biased towards passing by
+construction. The field-only score exists to make that bias visible rather than argue it
+away.
 
 There is also a [labelled dataset](datasets/field-2026-07-29/) of 73 findings from five
 real agent projects. It is **not** an accuracy claim: it is not reproducible from this

@@ -29,6 +29,12 @@ from agentguard.scanner import Scanner
 
 CORPUS = Path(__file__).resolve().parent.parent / "tests" / "corpus"
 SECTIONS = ("true_positives", "true_negatives")
+#: Where a corpus case came from. `field` means it reproduces a false positive or missed
+#: finding observed by scanning a real project; `written` means it was composed to cover a
+#: case someone thought of. The distinction matters because a corpus whose negatives were
+#: all selected from observed failures is biased towards passing, so the two are scored
+#: separately rather than blended into one flattering number.
+ORIGINS = frozenset({"field", "written"})
 
 
 @dataclass
@@ -50,9 +56,11 @@ class Tally:
         return None if denominator == 0 else self.true_positives / denominator
 
 
-def load_manifest() -> dict[Path, set[str]]:
+def load_manifest() -> tuple[dict[Path, set[str]], dict[Path, str]]:
+    """Return (expectations, origins). Both keyed by path."""
     raw = yaml.safe_load((CORPUS / "manifest.yml").read_text(encoding="utf-8"))
     labels: dict[Path, set[str]] = {}
+    origins: dict[Path, str] = {}
     problems: list[str] = []
     for section in SECTIONS:
         for name, entry in (raw.get(section) or {}).items():
@@ -62,6 +70,12 @@ def load_manifest() -> dict[Path, set[str]]:
                 continue
             if not (entry or {}).get("why", "").strip():
                 problems.append(f"no `why` given for {section}/{name}")
+            origin = (entry or {}).get("origin")
+            if origin not in ORIGINS:
+                problems.append(
+                    f"{section}/{name}: `origin` must be one of {', '.join(sorted(ORIGINS))}, got {origin!r}"
+                )
+            origins[path] = origin if origin in ORIGINS else "written"
             labels[path] = set(entry.get("expect") or [])
 
     on_disk = {path for section in SECTIONS for path in (CORPUS / section).rglob("*") if path.is_file()}
@@ -72,16 +86,19 @@ def load_manifest() -> dict[Path, set[str]]:
         for problem in problems:
             print(f"corpus error: {problem}", file=sys.stderr)
         raise SystemExit(2)
-    return labels
+    return labels, origins
 
 
-def measure(labels: dict[Path, set[str]]) -> tuple[dict[str, Tally], list[str], list[str]]:
+def measure(
+    labels: dict[Path, set[str]],
+) -> tuple[dict[str, Tally], list[str], list[str], list[str]]:
     tallies: dict[str, Tally] = defaultdict(Tally)
     for rule in BUILTIN_RULES:
         tallies[rule.metadata.id] = Tally()
 
     scan_errors: list[str] = []
     undiscovered: list[str] = []
+    misbehaving: list[str] = []
     for path, expected in sorted(labels.items()):
         result = Scanner(Config()).scan(path)
         scan_errors.extend(result.errors)
@@ -95,6 +112,8 @@ def measure(labels: dict[Path, set[str]]) -> tuple[dict[str, Tally], list[str], 
             fired[finding.rule_id].append(finding.location.line)
 
         rel = path.relative_to(CORPUS).as_posix()
+        if set(fired) != expected:
+            misbehaving.append(rel)
         for rule_id, lines in fired.items():
             if rule_id in expected:
                 tallies[rule_id].true_positives += 1
@@ -104,15 +123,23 @@ def measure(labels: dict[Path, set[str]]) -> tuple[dict[str, Tally], list[str], 
         for rule_id in expected - set(fired):
             tallies[rule_id].false_negatives += 1
             tallies[rule_id].fn_locations.append(rel)
-    return dict(tallies), scan_errors, undiscovered
+    return dict(tallies), scan_errors, undiscovered, misbehaving
 
 
 def _pct(value: float | None) -> str:
     return "  —  " if value is None else f"{value * 100:5.1f}%"
 
 
-def render(tallies: dict[str, Tally], scan_errors: list[str], undiscovered: list[str]) -> None:
-    print(f"AgentGuard detection benchmark — {len(BUILTIN_RULES)} rules\n")
+def render(
+    tallies: dict[str, Tally],
+    scan_errors: list[str],
+    undiscovered: list[str],
+    total: int,
+    subset: bool,
+    misbehaving: list[str],
+) -> None:
+    scope = "field-derived cases only" if subset else f"{total} labelled cases"
+    print(f"AgentGuard detection benchmark — {len(BUILTIN_RULES)} rules, {scope}\n")
     print("| Rule  |  TP |  FP |  FN | Precision | Recall |")
     print("|-------|----:|----:|----:|----------:|-------:|")
     totals = Tally()
@@ -139,6 +166,14 @@ def render(tallies: dict[str, Tally], scan_errors: list[str], undiscovered: list
     if any(t.fp_locations or t.fn_locations for t in tallies.values()):
         print()
 
+    # Precision over a subset selected from observed failures is structurally skewed - the
+    # field-derived cases are nearly all negatives, because a field false positive becomes a
+    # true negative here. How many behave as labelled is the statistic that survives that.
+    behaving = total - len(misbehaving)
+    print(f"\n{behaving} of {total} cases behave as labelled.")
+    for name in misbehaving:
+        print(f"  does not: {name}")
+
     if undiscovered:
         print(
             f"\n{len(undiscovered)} corpus file(s) never opened by file discovery. These measure"
@@ -156,9 +191,17 @@ def render(tallies: dict[str, Tally], scan_errors: list[str], undiscovered: list
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit JSON instead of a table")
+    parser.add_argument(
+        "--field-only",
+        action="store_true",
+        help="score only cases derived from scanning real projects, excluding composed ones",
+    )
     args = parser.parse_args()
 
-    tallies, scan_errors, undiscovered = measure(load_manifest())
+    labels, origins = load_manifest()
+    if args.field_only:
+        labels = {path: expected for path, expected in labels.items() if origins[path] == "field"}
+    tallies, scan_errors, undiscovered, misbehaving = measure(labels)
     if args.json:
         print(
             json.dumps(
@@ -175,6 +218,8 @@ def main() -> int:
                         }
                         for rule_id, t in sorted(tallies.items())
                     },
+                    "cases": len(labels),
+                    "misbehaving": misbehaving,
                     "scan_errors": scan_errors,
                     "undiscovered": undiscovered,
                 },
@@ -182,7 +227,7 @@ def main() -> int:
             )
         )
     else:
-        render(tallies, scan_errors, undiscovered)
+        render(tallies, scan_errors, undiscovered, len(labels), args.field_only, misbehaving)
     return 0
 
 

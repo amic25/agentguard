@@ -9,12 +9,12 @@ true positive, or a corpus file that drifts away from its label, is a defect eit
 from __future__ import annotations
 
 import pytest
-from tools.bench import CORPUS, load_manifest, measure
+from tools.bench import CORPUS, ORIGINS, load_manifest, measure
 
 
 def test_manifest_and_disk_agree() -> None:
     """load_manifest exits 2 on drift, so reaching the assertions means it is consistent."""
-    labels = load_manifest()
+    labels, _ = load_manifest()
     assert labels, "corpus is empty"
     assert (CORPUS / "manifest.yml").exists()
 
@@ -30,14 +30,14 @@ def test_every_label_has_a_reason() -> None:
 
 def test_recall_is_total() -> None:
     """Every rule labelled as firing on a true positive still fires on it."""
-    tallies, _, _ = measure(load_manifest())
+    tallies, _, _, _ = measure(load_manifest()[0])
     missed = {rule_id: tally.fn_locations for rule_id, tally in tallies.items() if tally.false_negatives}
     assert not missed, f"rules stopped detecting labelled true positives: {missed}"
 
 
 def test_measurement_is_not_degraded_by_scan_errors() -> None:
     """A benchmark computed from a partial scan is not a benchmark."""
-    _, scan_errors, _ = measure(load_manifest())
+    _, scan_errors, _, _ = measure(load_manifest()[0])
     assert not scan_errors, f"corpus scan produced errors: {scan_errors}"
 
 
@@ -48,7 +48,7 @@ def test_every_corpus_file_is_discovered() -> None:
     scanner that could not read the canonical secrets file. Discovery now covers them, so
     the expected set is empty. If this grows, something stopped being scanned.
     """
-    _, _, undiscovered = measure(load_manifest())
+    _, _, undiscovered, _ = measure(load_manifest()[0])
     assert undiscovered == [], (
         f"corpus files AgentGuard cannot see: {undiscovered}. Either discovery regressed, "
         "or a file shape was added that nothing scans."
@@ -59,3 +59,24 @@ def test_every_corpus_file_is_discovered() -> None:
 def test_corpus_sections_are_populated(section: str) -> None:
     files = [path for path in (CORPUS / section).rglob("*") if path.is_file()]
     assert len(files) >= 10, f"{section} has only {len(files)} files"
+
+
+def test_every_case_declares_its_origin() -> None:
+    """`origin` separates cases drawn from real projects from cases someone composed.
+
+    Enforced rather than inferred: it was previously read by sniffing the prose in `why`,
+    which miscounted the moment an entry said "field finding" instead of "measured". A
+    corpus whose negatives were all selected from observed failures is biased towards
+    passing, so the split has to be reliable enough to score separately.
+    """
+    _, origins = load_manifest()
+    assert origins, "corpus is empty"
+    assert set(origins.values()) <= ORIGINS
+    field = sum(1 for value in origins.values() if value == "field")
+    assert field, "no case is marked as field-derived; the split has stopped meaning anything"
+
+
+def test_field_only_scoring_is_a_strict_subset() -> None:
+    labels, origins = load_manifest()
+    field_only = {p: e for p, e in labels.items() if origins[p] == "field"}
+    assert 0 < len(field_only) < len(labels)

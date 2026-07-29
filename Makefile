@@ -19,6 +19,7 @@ test:
 
 bench:
 	python -m tools.bench
+	python -m tools.bench --field-only
 
 check: lint type test bench
 
