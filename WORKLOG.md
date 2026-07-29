@@ -569,3 +569,80 @@ Field, five real projects, 4,750 files: 233 findings → 73; 208 → 17 at gatin
   measurement.
 - No rule other than AG009 deleted or disabled.
 - No runtime dependency added; one (`packaging`) was removed.
+
+---
+
+## Unit 9 — push, CI, and SARIF verification — 2026-07-29
+
+Status: complete
+Changed: `src/agentguard/context.py`, `tests/test_rule_context.py`, corpus rename, CHANGELOG
+
+Pushed `audit/phase-0`; opened PR #17.
+
+### CI — first run against this work
+
+```
+CI (3.10, 3.11, 3.12, 3.13)  → success   (lint, mypy, pytest, bench, package, self-scan)
+CodeQL                        → success
+Container                     → success
+Dependency review             → failure (pre-existing: dependency graph disabled on the repo)
+```
+`make bench` output appears in the CI log on all four versions, so a precision change is
+now visible in a log diff. Enabled Dependabot alerts and automated security fixes on the
+repository to clear the dependency-review failure, which was failing on every PR, not
+just this one.
+
+### SARIF verified in GitHub code scanning — AUDIT.md F7 closed
+
+The CI upload succeeded but carried `results: 0`, because AgentGuard is clean on its own
+`src/`. That proves ingestion, not rendering. Generated a findings-bearing SARIF from the
+corpus and uploaded it directly:
+
+```
+processing_status: complete, errors: null
+21 alerts rendered, correct rule IDs, paths, and line numbers
+severity mapping: Critical→critical, High→high, Medium→medium, Low→low
+message text survives intact
+```
+The verification analysis was then deleted; 0 AgentGuard alerts remain on the branch.
+
+This item was listed as "could not verify" in unit 8. It is now verified.
+
+### A real defect the verification found
+
+The rendered alerts showed `test_secrets_fixture.py` as **critical**, not downgraded.
+Cause: `is_fixture` classified on the path *below the scan root*, so scanning a fixture
+directory directly made every file look like production code.
+
+```
+scan /tmp/fx           → AG001=MEDIUM AG001=MEDIUM
+scan /tmp/fx/tests     → AG001=CRITICAL      # policy silently disabled
+scan /tmp/fx/examples  → AG001=CRITICAL
+```
+
+Fixed by including the scan root's own name — and only that, never the absolute path
+above it, so a checkout living under a directory called `test` is not misread as one
+large fixture. Both cases are pinned by tests.
+
+The same bug meant the corpus entry claiming to pin the downgrade never reached it: the
+benchmark scans each file individually, so no `tests/` component was ever visible.
+Renamed to `test_secrets_fixture.py` so the claim is true. It now reports
+`MEDIUM confidence=low fixture=True`, as the manifest says it should.
+
+Verified after the fix:
+```
+pytest -q               → 145 passed, 92.66% coverage
+ruff / mypy             → clean
+python -m tools.bench   → 100.0% precision, 100.0% recall (unchanged)
+field, 5 projects       → 73 findings, 17 gating (unchanged)
+```
+
+Bench delta: none. The fix changed severity classification, not detection.
+Decisions taken alone:
+1. **Enabled Dependabot alerts and automated security fixes on the repository.** Required
+   to clear a dependency-review failure that predates this work. Repository setting, not
+   code, and reversible.
+2. **Deleted the verification code-scanning analysis** rather than leaving 21 synthetic
+   alerts on the branch.
+
+Next: merge, then assess release.

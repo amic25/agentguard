@@ -50,12 +50,23 @@ class SourceFile:
         Judged from the path rather than the content, because that is the signal a
         reviewer uses too: a credential under ``tests/`` is a fixture until shown
         otherwise, and a call to ``delete_file`` in ``examples/`` is a demonstration.
+
+        The scan root's own name counts. Classifying only on the path *below* the root
+        meant ``agentguard scan tests/`` saw plain filenames and treated a whole test
+        suite as production code — the precise noise this policy exists to remove. Only
+        the root's own name is added, never the absolute path above it, so a checkout
+        living under a directory called ``test`` is not misread as one big fixture.
         """
         try:
             relative = self.relative_path.as_posix()
         except ValueError:  # pragma: no cover - path outside root
             relative = self.path.as_posix()
-        return bool(_FIXTURE_PATH.search(relative) or _FIXTURE_NAME.match(self.path.stem))
+        rooted = f"{self.root.name}/{relative}" if self.root.name else relative
+        return bool(
+            _FIXTURE_PATH.search(relative)
+            or _FIXTURE_PATH.search(rooted)
+            or _FIXTURE_NAME.match(self.path.stem)
+        )
 
     def regions(self) -> Regions:
         """Comment, string, docstring, and annotation spans, computed once per file."""

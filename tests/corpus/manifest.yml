@@ -70,13 +70,15 @@ true_positives:
       positive so that tightening AG005's `path` word boundary is measured rather than
       assumed harmless.
 
-  secrets_in_test_fixtures.py:
+  test_secrets_fixture.py:
     expect: [AG001]
     why: >-
       Credentials do get committed to test fixtures, so this must still be reported -
       but at reduced severity and confidence, because credential-shaped literals in tests
       are usually fixtures. This file exists to pin that downgrade, not to demand silence.
-      See tests/test_fixture_policy.py.
+      Named `test_*` so the downgrade is exercised even when the benchmark scans the file
+      on its own, where no `tests/` path component is visible. The earlier name made this
+      entry claim to pin the downgrade while never reaching it.
 
 true_negatives:
   .env.example:

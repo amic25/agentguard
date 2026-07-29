@@ -205,3 +205,33 @@ def test_engine_gates_apply_to_third_party_rules(project: Path) -> None:
     (tests_dir / "test_a.py").write_text("value = 1\n", encoding="utf-8")
     result = Scanner(Config(), rules=[LoudRule()]).scan(project)
     assert not result.findings, "default fixture_policy=suppress must apply to plugins too"
+
+
+def test_scanning_a_test_directory_directly_still_classifies_it(project: Path) -> None:
+    """`agentguard scan tests/` must not read a whole suite as production code.
+
+    Classifying only on the path below the scan root meant pointing the scanner at a
+    fixture directory silently disabled the fixture policy, which is exactly when it is
+    most needed. Caught by SARIF alerts rendering a corpus fixture as `critical`.
+    """
+    tests_dir = project / "tests"
+    tests_dir.mkdir()
+    # deliberately NOT named test_*, so only the path can classify it
+    (tests_dir / "helpers.py").write_text('api_key = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
+
+    from_parent = Scanner(Config()).scan(project).findings
+    from_inside = Scanner(Config()).scan(tests_dir).findings
+
+    assert [f.severity for f in from_parent] == [Severity.MEDIUM]
+    assert [f.severity for f in from_inside] == [Severity.MEDIUM], (
+        "scanning the fixture directory directly must classify it the same way"
+    )
+
+
+def test_a_checkout_under_a_directory_named_test_is_not_all_fixtures(project: Path) -> None:
+    """Only the scan root's own name is added, never the absolute path above it."""
+    root = project / "test" / "myproject"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "agent.py").write_text('api_key = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
+    findings = Scanner(Config()).scan(root).findings
+    assert [f.severity for f in findings] == [Severity.CRITICAL]

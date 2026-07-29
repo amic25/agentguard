@@ -49,6 +49,9 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
   snippets as unvalidated agent tools.
 - `AG008` matched definition sites, reporting `def delete_file(...)` as an unapproved
   high-impact action.
+- Fixture classification only considered the path *below* the scan root, so
+  `agentguard scan tests/` read an entire test suite as production code — disabling the
+  fixture policy exactly where it matters most. The scan root's own name now counts.
 
 ### Removed
 
