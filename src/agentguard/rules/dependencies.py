@@ -1,75 +1,18 @@
-"""Dependency manifest checks with a small high-signal advisory catalog."""
+"""Dependency manifest checks.
+
+AG009 (bundled vulnerability advisories) was removed in favour of delegating to
+purpose-built tools. See docs/RULE_IDS.md for why, and for the guarantee that the
+identifier will never be reused.
+"""
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable
-from dataclasses import replace
-
-from packaging.specifiers import SpecifierSet
-from packaging.version import InvalidVersion, Version
 
 from agentguard.context import SourceFile
 from agentguard.models import Finding, Severity
 from agentguard.rules.base import Rule, RuleMetadata
-
-ADVISORIES: dict[str, tuple[str, str, Severity]] = {
-    "langchain": ("<0.2.5", "CVE-2024-2965", Severity.MEDIUM),
-    "langchain-community": ("==0.0.27", "CVE-2025-2828", Severity.HIGH),
-    "axios": (">=1.3.2,<1.7.4", "CVE-2024-39338", Severity.HIGH),
-}
-
-
-class VulnerableDependencyRule(Rule):
-    metadata = RuleMetadata(
-        "AG009",
-        "Known vulnerable dependency",
-        Severity.HIGH,
-        "dependencies",
-        "Checks pinned dependencies against bundled advisories.",
-    )
-
-    def scan(self, source: SourceFile) -> Iterable[Finding]:
-        name = source.path.name
-        dependencies: list[tuple[str, str, int]] = []
-        if name.startswith("requirements") and name.endswith(".txt"):
-            for number, line in enumerate(source.lines, 1):
-                match = re.match(r"\s*([A-Za-z0-9_.-]+)==([^\s;]+)", line)
-                if match:
-                    dependencies.append((match.group(1).lower().replace("_", "-"), match.group(2), number))
-        elif name in {"package.json", "package-lock.json"}:
-            try:
-                payload = json.loads(source.content)
-            except json.JSONDecodeError:
-                return
-            for section in ("dependencies", "devDependencies"):
-                for dependency, version in payload.get(section, {}).items():
-                    clean = str(version).lstrip("^~>=<v ")
-                    line_number = next(
-                        (i for i, text in enumerate(source.lines, 1) if f'"{dependency}"' in text), 1
-                    )
-                    dependencies.append((dependency.lower(), clean, line_number))
-        for dependency, version, line_number in dependencies:
-            advisory = ADVISORIES.get(dependency)
-            if not advisory:
-                continue
-            affected, identifier, severity = advisory
-            try:
-                vulnerable = Version(version) in SpecifierSet(affected)
-            except InvalidVersion:
-                continue
-            if vulnerable:
-                finding = self.finding(
-                    source,
-                    line_number,
-                    f"`{dependency}=={version}` matches bundled advisory {identifier} ({affected}).",
-                    "A known dependency weakness may expose agent data, credentials, or execution boundaries.",
-                    "Upgrade to a fixed release, refresh the lockfile, run the full test suite, and verify with OSV-Scanner or the ecosystem audit tool.",
-                    references=(f"https://osv.dev/vulnerability/{identifier}",),
-                    metadata={"dependency": dependency, "version": version, "advisory": identifier},
-                )
-                yield replace(finding, severity=severity)
 
 
 class UnpinnedDependencyRule(Rule):

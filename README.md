@@ -35,7 +35,7 @@ Agent applications combine untrusted natural-language input with credentials, to
 | External APIs | plaintext HTTP, caller-controlled URLs, SSRF paths | `AG006` |
 | Input validation | tools without strict typed or JSON schemas | `AG007` |
 | Agent privileges | consequential actions without approval gates | `AG008` |
-| Dependencies | bundled high-signal advisories and unpinned requirements | `AG009–AG010` |
+| Dependencies | unpinned requirements | `AG010` |
 
 AgentGuard recognizes common patterns from LangChain, CrewAI, AutoGen, OpenAI Agents/API applications, and MCP clients/servers. The rules are framework-tolerant: they inspect the security behavior rather than requiring one exact SDK version.
 

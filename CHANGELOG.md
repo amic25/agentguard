@@ -11,6 +11,21 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
   completion over every in-scope file.
 - `RepoConfig`, the untrusted configuration type, and `Config.tightened_by`, the monotone merge that
   is the only route from it into an effective configuration.
+- `docs/RULE_IDS.md`: the rule identifier policy — never reuse a retired ID, never silently rename,
+  alias on change — plus the permanent register of retired identifiers.
+
+### Removed
+
+- **`AG009` (known vulnerable dependency).** It bundled three hand-maintained advisories and read
+  only `requirements*.txt` and `package.json`, and it fired zero times across five real agent
+  projects (4,750 files). A stale, near-empty advisory database invites false confidence; a real one
+  is a data-operations commitment this project has not made. Use `pip-audit`, `osv-scanner`, or
+  Dependabot, as `docs/SECURITY_MODEL.md` already recommended. **The `AG009` identifier is retired
+  permanently and will never be reused** — see the new `docs/RULE_IDS.md`. Migration: remove `AG009`
+  from `disabled_rules`, `severity_overrides`, and any `# agentguard: ignore [AG009]` comments; they
+  are now inert.
+- The `packaging` runtime dependency, which existed solely for `AG009`. AgentGuard's runtime
+  dependencies are now `pyyaml`, `rich`, and `typer`.
 
 ### Security
 
