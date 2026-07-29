@@ -34,9 +34,10 @@ class NoProductionDebugTool(Rule):
 rules = [NoProductionDebugTool]
 ```
 
-Load a local importable module:
+Load a local importable module. Plugins execute inside the scanner process, so `plugins` is only honoured in a config the operator vouches for with `--config`; it is rejected in a config discovered inside the repository being scanned. See [Security model](SECURITY_MODEL.md#configuration-trust-boundary).
 
 ```yaml
+# agentguard scan . --config agentguard-operator.yml
 plugins:
   - acme_agentguard_rules
 ```
@@ -51,3 +52,5 @@ acme = "acme_agentguard_rules:rules"
 An entry point may expose a `Rule` instance/class, a list or tuple of rules/classes, or a zero-argument factory returning that list. Rule IDs must be globally unique. Namespace third-party IDs to avoid collisions.
 
 Test positive and negative cases, source locations, malformed input, and suppressions. Rules must not execute or import scanned code, access the network unexpectedly, mutate source files, or include sensitive matched text in finding messages.
+
+That last constraint extends to exceptions. When a rule raises, the scanner records the exception text in `ScanResult.errors`, which reaches JSON, Markdown, SARIF `toolExecutionNotifications`, and the terminal — all of which are commonly uploaded as CI artifacts. A rule that quotes matched source in an error message discloses it. Report the location; never the value.
