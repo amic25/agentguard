@@ -12,50 +12,59 @@
 
 true_positives:
   hardcoded_secrets.py:
+    origin: written
     expect: [AG001]
     why: >-
       Four credential shapes assigned in a production module: OpenAI, AWS, GitHub, and a
       high-entropy password. This is the case the rule exists for.
 
   command_execution.py:
+    origin: written
     expect: [AG002]
     why: >-
       os.system and eval on caller-supplied values, and subprocess with shell=True. Each
       is a path from model output to arbitrary command execution.
 
   broad_tool_permissions.py:
+    origin: written
     expect: [AG003]
     why: >-
       allow_dangerous_code=True and allow_delegation=True are explicit grants of
       capability that widen blast radius.
 
   prompt_injection.py:
+    origin: written
     expect: [AG004]
     why: >-
       user_input and web_content interpolated directly into prompt and system_message
       f-strings, with no separation between data and instructions.
 
   unsafe_file_access.py:
+    origin: written
     expect: [AG005]
     why: open() on a caller-controlled path, reachable from tool arguments.
 
   risky_external_api.py:
+    origin: written
     expect: [AG006]
     why: A plaintext http:// endpoint, so request and response are interceptable.
 
   missing_validation.py:
+    origin: written
     expect: [AG007]
     why: >-
       A @tool function whose parameter carries no type or schema, so the model may supply
       any shape it likes.
 
   missing_approval.py:
+    origin: written
     expect: [AG008]
     why: >-
       transfer_funds is called with no approval or confirmation gate anywhere nearby; an
       injected instruction reaches an irreversible action.
 
   requirements.txt:
+    origin: written
     expect: [AG010]
     why: >-
       Dependencies with no version constraint admit an unreviewed future release. Package
@@ -64,10 +73,21 @@ true_positives:
       review on every future advisory.
 
   agent_tools.ts:
+    origin: written
     expect: [AG002]
     why: execSync on a caller-supplied command in TypeScript.
 
+  .env:
+    origin: written
+    expect: [AG001]
+    why: >-
+      The canonical secrets file. Values are unquoted, which is the convention and which
+      the quoted assigned-credential pattern does not match - so this needs its own
+      pattern, applied only to env files. `DEBUG=true` and `PORT=8080` must not fire,
+      which is what stops that pattern being a blanket KEY=VALUE matcher.
+
   root_dir_broad.py:
+    origin: written
     expect: [AG005]
     why: >-
       An agent workspace rooted at "/" grants the whole filesystem. Kept as a true
@@ -75,6 +95,7 @@ true_positives:
       assumed harmless.
 
   test_secrets_fixture.py:
+    origin: written
     expect: [AG001]
     why: >-
       Credentials do get committed to test fixtures, so this must still be reported -
@@ -85,39 +106,64 @@ true_positives:
       entry claim to pin the downgrade while never reaching it.
 
 true_negatives:
-  .env.example:
+  .env.local:
+    origin: written
     expect: []
     why: >-
-      A .env template exists to be committed; its values are placeholders. Includes
-      AKIAIOSFODNN7EXAMPLE, AWS's own documentation key. NOTE: AgentGuard does not
-      currently discover .env files at all, so this entry is recorded by the harness as
-      not-discovered rather than as a pass. It also means a real .env would be missed.
+      A real .env file, not a template, so the fixture downgrade does not apply and every
+      line must fail to fire on its own merits: commented-out credentials, empty values,
+      braced and unbraced shell interpolation, values under the length floor, and ordinary
+      configuration. The unbraced `$OTHER_TOKEN` form was reported as a critical secret
+      until this case existed - the placeholder filter required braces.
+
+  .env.sample:
+    origin: written
+    expect: []
+    why: >-
+      A second template naming convention. `sk-proj-replace-this-before-running` carried no
+      word the placeholder filter recognised and was reported until this case existed. Note
+      the mechanism is the *value*, not the filename: a genuine credential committed to a
+      .env template is a real leak and is still reported, at reduced severity.
+
+  .env.example:
+    origin: written
+    expect: []
+    why: >-
+      A .env template exists to be committed and holds placeholders by convention, so it
+      is classified as a fixture and its values are caught by the placeholder filter.
+      Includes AKIAIOSFODNN7EXAMPLE, AWS's own documentation key. Previously this file was
+      not discovered at all and scored a free pass while proving nothing.
 
   secrets_in_docstrings.py:
+    origin: field
     expect: []
     why: >-
       Doctest examples showing argument shape. Observed in crewAI, where a docstring
       example was reported as a committed private key.
 
   eval_on_literal.py:
+    origin: written
     expect: []
     why: >-
       eval over a string literal has no attacker-controlled input. Flagging it teaches
       readers that the rule does not distinguish reachable from unreachable.
 
   subprocess_fixed_args.py:
+    origin: written
     expect: []
     why: >-
       A fixed argument vector with shell=False cannot become an arbitrary command. This
       is the remediation the AG002 finding text recommends, so flagging it punishes the fix.
 
   constant_prompt.py:
+    origin: written
     expect: []
     why: >-
       The interpolated names are module constants, not untrusted data. No trust boundary
       is crossed.
 
   method_named_exec.py:
+    origin: field
     expect: []
     why: >-
       super().exec() and self.client().eval() are ordinary method calls. AG002's name
@@ -125,37 +171,105 @@ true_negatives:
       openai-agents-python.
 
   token_annotations.py:
+    origin: field
     expect: []
     why: >-
       contextvars.Token[Any] is a type annotation. The AG001 assigned-credential pattern
       matched `token: "..."` as a credential. Measured twice in openai-agents-python.
 
   route_paths.py:
+    origin: field
     expect: []
     why: >-
       streamable_http_path="/" is an HTTP mount point, not a filesystem root. Measured
       eight times in modelcontextprotocol/python-sdk.
 
   dependabot.yml:
+    origin: field
     expect: []
     why: >-
       `directory: "/"` locates a dependency manifest. A filesystem-access rule has no
       business reading CI configuration at all. Measured in three of five projects.
 
   function_definitions.py:
+    origin: written
     expect: []
     why: >-
       Defining delete_file, deploy, or send_email is not performing them. AG008 matched
       `def` sites, which was most of its findings across four of five projects.
 
+  js_fetch_local_url.js:
+    origin: field
+    expect: []
+    why: >-
+      `fetch(url)` where `url` holds a compile-time host. Converted from an assertion in
+      tests/test_rules.py that AG006 *should* fire here - that expectation was wrong, and a
+      wrong expectation in a test is worse than none because it defends the defect. Every
+      AG006 field finding was this shape.
+
   analytics_iife.js:
+    origin: field
     expect: []
     why: >-
       An IIFE is not a tool definition. AG007's JavaScript pattern matches any
       `function(`. Measured in crewAI's documentation assets.
 
   requirements.txt:
+    origin: written
     expect: []
     why: >-
       Fully pinned dependencies are the state AG010 asks for. Fictional package names, for
       the same reason as the true_positives counterpart.
+
+  # --- folded back from field measurement -------------------------------------------
+  # Every entry below reproduces a false positive found by scanning real agent projects,
+  # not one invented while reading the rules. The corpus previously scored AG003 and
+  # AG006 at 100% precision while they were ~98-100% false positives in the field; that
+  # gap was a corpus validity failure. Adding these makes the number fall, and the lower
+  # number is the honest one.
+
+  framework_lookup_maps.py:
+    origin: field
+    expect: []
+    why: >-
+      A local variable named `function_map` is not AutoGen's function_map parameter.
+      Measured twice in openai-agents-python. AG003 currently fires; this is expected to
+      show as a false positive until the pattern is narrowed.
+
+  fixed_host_requests.py:
+    origin: field
+    expect: []
+    why: >-
+      Compile-time host, TLS, explicit timeout. AG006 matches any first argument named
+      `url` regardless of provenance. Measured twice in crewAI.
+
+  exec_of_module_constant.py:
+    origin: field
+    expect: []
+    why: >-
+      exec over a module-level constant has no attacker-controlled input. Distinct from
+      eval_on_literal.py, where the argument is a literal and is already handled: here it
+      is a Name, so literal detection does not catch it. Measured in browser-use.
+
+  path_normaliser.py:
+    origin: field
+    expect: []
+    why: >-
+      `path = "/" + path` prefixes a slash; it does not grant a filesystem root. Measured
+      in crewAI.
+
+  internal_cleanup.py:
+    origin: field
+    expect: []
+    why: >-
+      Deleting a temp file the code itself created is not a consequential side effect on
+      user data, and the path is not agent-controlled. Measured in crewAI.
+
+  publishable_keys.py:
+    origin: field
+    expect: [AG001]
+    why: >-
+      Publishable keys must still be reported - the publishable and secret halves are easy
+      to confuse - but capped at Low, so this is a true positive whose *severity* is the
+      assertion. Pinned by tests/test_rule_context.py::test_publishable_key_is_capped_at_low.
+      Measured as Critical false positives in browser-use and langgraph.

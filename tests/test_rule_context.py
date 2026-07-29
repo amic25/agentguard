@@ -235,3 +235,179 @@ def test_a_checkout_under_a_directory_named_test_is_not_all_fixtures(project: Pa
     (root / "src" / "agent.py").write_text('api_key = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
     findings = Scanner(Config()).scan(root).findings
     assert [f.severity for f in findings] == [Severity.CRITICAL]
+
+
+# --- credential class -------------------------------------------------------------------
+
+
+def test_publishable_key_is_capped_at_low(project: Path) -> None:
+    """A PostHog project key ships in client JavaScript. Committing it is not a compromise.
+
+    Measured as a Critical false positive in browser-use and langgraph.
+    """
+    (project / "telemetry.py").write_text(
+        "POSTHOG_PROJECT_API_KEY = 'phc_F8JMNjW1i2KbGUTaW1unnDdLSPCoyc52SGRU0Jeca'\n",
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings, "a publishable key is still worth reporting"
+    assert findings[0].severity == Severity.LOW
+    assert findings[0].metadata["credential_class"] == "public"
+    assert "publishable by design" in findings[0].explanation
+
+
+def test_public_by_name_is_capped_at_low(project: Path) -> None:
+    (project / "constants.py").write_text(
+        'SUPABASE_PUBLIC_API_KEY = "eyJhbGciOiJIUzI1NiJ9.b7Kq2ZmVx9Lp4Rt6Wn3Jc.sig"\n',
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings and findings[0].severity == Severity.LOW
+
+
+def test_an_ordinary_secret_is_not_capped(project: Path) -> None:
+    """The cap must not swallow the case the rule exists for."""
+    (project / "config.py").write_text('DATABASE_PASSWORD = "b7Kq2ZmVx9Lp4Rt6Wn3Jc"\n', encoding="utf-8")
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG001"]
+    assert findings[0].severity == Severity.CRITICAL
+    assert findings[0].metadata["credential_class"] == "secret"
+
+
+# --- vendored paths ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["vendor/dep.py", "third_party/dep.py", "lib/site-packages/dep.py", "bundled/dep.py"],
+)
+def test_vendored_paths_are_recognised(project: Path, relative: str) -> None:
+    path = project / relative
+    assert SourceFile(path, project, "", "python").is_vendored
+
+
+def test_findings_in_vendored_code_are_downgraded(project: Path) -> None:
+    """A finding in someone else's release is not actionable where it is reported."""
+    vendored = project / "vendor" / "dep"
+    vendored.mkdir(parents=True)
+    (vendored / "runner.py").write_text("import os\n\n\ndef r(c):\n    os.system(c)\n", encoding="utf-8")
+    assert "AG002" not in _rules(Scanner(Config()).scan(project).findings)
+
+
+def test_first_party_code_is_unaffected_by_the_vendored_rule(project: Path) -> None:
+    src = project / "src"
+    src.mkdir()
+    (src / "runner.py").write_text("import os\n\n\ndef r(c):\n    os.system(c)\n", encoding="utf-8")
+    assert "AG002" in _rules(Scanner(Config()).scan(project).findings)
+
+
+# --- shell=True with an argument list ---------------------------------------------------
+
+
+def test_shell_true_with_a_list_describes_the_portability_bug(project: Path) -> None:
+    """POSIX passes only argv[0] to the shell. That is the defect, not injection."""
+    (project / "cli.py").write_text(
+        'import subprocess\n\n\ndef v(cmd):\n    subprocess.run([cmd, "--version"], shell=True)\n',
+        encoding="utf-8",
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG002"]
+    assert findings, "still reported - it is a real defect"
+    assert "argument list" in findings[0].explanation
+    assert "silently discarded" in findings[0].risk
+    assert findings[0].metadata["defect_class"] == "portability"
+
+
+def test_shell_true_with_a_string_is_still_an_injection_finding(project: Path) -> None:
+    (project / "cli.py").write_text(
+        "import subprocess\n\n\ndef v(cmd):\n    subprocess.run(cmd, shell=True)\n", encoding="utf-8"
+    )
+    findings = [f for f in Scanner(Config()).scan(project).findings if f.rule_id == "AG002"]
+    assert findings and "no enforceable command boundary" in findings[0].explanation
+
+
+# --- dispositions of the five corpus failures -------------------------------------------
+
+
+def test_ag003_no_longer_flags_a_local_named_function_map(project: Path) -> None:
+    """FIXED. The clause matched any variable of that name, and where it did hit
+    AutoGen's real parameter it flagged a function map's existence, not its breadth."""
+    content = "def build(tools):\n    function_map = {t.name: t for t in tools}\n    return function_map\n"
+    assert "AG003" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag003_still_flags_an_explicit_capability_grant(project: Path) -> None:
+    content = "agent = Agent(role='ops', allow_dangerous_code=True)\n"
+    assert "AG003" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag005_no_longer_flags_a_path_normaliser(project: Path) -> None:
+    """FIXED. `path = "/" + path` prefixes a separator; it does not grant a root."""
+    content = 'def n(path):\n    if not path.startswith("/"):\n        path = "/" + path\n    return path\n'
+    assert "AG005" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag005_still_flags_a_genuinely_broad_root(project: Path) -> None:
+    assert "AG005" in _rules(_findings(project, "mod.py", 'workspace = "/"\n'))
+
+
+def test_ag006_no_longer_flags_a_variable_merely_named_url(project: Path) -> None:
+    """FIXED. Every AG006 field finding was a compile-time host over TLS with a timeout."""
+    content = (
+        "import requests\n\n\n"
+        "def get(ds):\n"
+        '    url = f"https://api.example.invalid/v1/{ds}"\n'
+        "    return requests.get(url, timeout=30)\n"
+    )
+    assert "AG006" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag006_still_flags_an_actually_untrusted_source(project: Path) -> None:
+    content = "import requests\n\n\ndef get(tool_input):\n    return requests.get(tool_input, timeout=5)\n"
+    assert "AG006" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag006_still_flags_plaintext_http(project: Path) -> None:
+    content = 'import requests\n\n\ndef get():\n    return requests.get("http://x.invalid/a")\n'
+    assert "AG006" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_no_longer_flags_exec_of_a_module_constant(project: Path) -> None:
+    """FIXED. The executed argument is a name bound once to a literal at module scope."""
+    content = (
+        '_IMPORTS = "import os\\n"\n\n\ndef build():\n    ns = {}\n    exec(_IMPORTS, ns)\n    return ns\n'
+    )
+    assert "AG002" not in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_still_flags_exec_of_a_reassigned_name(project: Path) -> None:
+    """ "Bound exactly once" is load-bearing: a rebindable name is not a constant."""
+    content = (
+        '_IMPORTS = "import os\\n"\n\n\n'
+        "def override(v):\n"
+        "    global _IMPORTS\n"
+        "    _IMPORTS = v\n\n\n"
+        "def build():\n    exec(_IMPORTS, {})\n"
+    )
+    assert "AG002" in _rules(_findings(project, "mod.py", content))
+
+
+def test_ag002_still_flags_exec_of_a_parameter(project: Path) -> None:
+    assert "AG002" in _rules(_findings(project, "mod.py", "def run(code):\n    exec(code, {})\n"))
+
+
+@pytest.mark.xfail(
+    reason=(
+        "ACCEPTED PRECISION LIMIT, not a bug to be fixed silently. AG008 cannot tell a "
+        "tool deleting a caller-supplied path from a function deleting a temp file it "
+        "created itself; that needs data flow the rule does not have. Recorded in "
+        "docs/DECISIONS.md. This xfail is the marker - if it ever XPASSes, the limit has "
+        "been closed and the disposition should be revisited."
+    ),
+    strict=True,
+)
+def test_ag008_internal_cleanup_is_a_known_limit(project: Path) -> None:
+    content = (
+        "def append(sandbox, temp_path, code):\n"
+        "    if code != 0:\n"
+        "        sandbox.fs.delete_file(temp_path)\n"
+    )
+    assert "AG008" not in _rules(_findings(project, "mod.py", content))

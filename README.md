@@ -1,25 +1,98 @@
-<div align="center">
-  <img src="docs/assets/logo.svg" width="520" alt="AgentGuard — AI Agent Security Scanner">
+# AgentGuard
 
-  <p><strong>Find dangerous agent capabilities before they reach production.</strong></p>
+Static security scanner for AI agent applications, in Python and JavaScript/TypeScript.
+It looks for committed credentials, prompt-injection paths, unsafe command execution,
+excessive tool permissions, unrestricted file access, risky outbound calls, missing tool
+validation, missing approval gates, and unpinned dependencies.
 
-  [![CI](https://github.com/amic25/agentguard/actions/workflows/ci.yml/badge.svg)](https://github.com/amic25/agentguard/actions/workflows/ci.yml)
-  [![CodeQL](https://github.com/amic25/agentguard/actions/workflows/codeql.yml/badge.svg)](https://github.com/amic25/agentguard/actions/workflows/codeql.yml)
-  [![PyPI](https://img.shields.io/pypi/v/agentguard-sast?color=14b8a6)](https://pypi.org/project/agentguard-sast/)
-  [![Python](https://img.shields.io/pypi/pyversions/agentguard-sast)](https://pypi.org/project/agentguard-sast/)
-  [![License](https://img.shields.io/badge/license-Apache--2.0-2563eb)](LICENSE)
-</div>
-
-AgentGuard is an open-source static security scanner for AI agent applications. It looks for leaked secrets, prompt-injection paths, excessive permissions, unsafe system access, weak tool validation, risky outbound calls, missing human approval, and unpinned dependencies in Python and JavaScript/TypeScript projects.
-
-It is offline-first, CI-friendly, framework-aware, and designed to produce findings a developer can fix—not a wall of vague warnings.
+Offline. Never executes the code it scans. Designed to be run on repositories you have
+not read.
 
 ```bash
 pipx install agentguard-sast
 agentguard scan ./project
 ```
 
-<p align="center"><img src="docs/assets/demo.svg" width="900" alt="AgentGuard terminal scan showing prioritized findings"></p>
+## How well does it work?
+
+Measured against a labelled corpus in this repository. Reproduce it with `make bench`:
+
+```
+| Rule  |  TP |  FP |  FN | Precision | Recall |
+|-------|----:|----:|----:|----------:|-------:|
+| AG001 |   4 |   0 |   0 |    100.0% | 100.0% |
+| AG002 |   2 |   0 |   0 |    100.0% | 100.0% |
+| AG003 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG004 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG005 |   2 |   0 |   0 |    100.0% | 100.0% |
+| AG006 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG007 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG008 |   1 |   1 |   0 |     50.0% | 100.0% |
+| AG010 |   1 |   0 |   0 |    100.0% | 100.0% |
+| **all** |  14 |   1 |   0 |     93.3% | 100.0% |
+```
+
+**93.3% precision and 100% recall over 34 labelled files** — 13 true positives and 21 true
+negatives, each carrying a written reason for its label in `tests/corpus/manifest.yml`.
+That is the only accuracy figure this project publishes, because it is the only one it can
+reproduce.
+
+13 of the 21 true negatives reproduce a false positive observed on a real project; the other
+8 were composed to cover awkward cases — a credential in a docstring, `eval` on a literal,
+`subprocess` with a fixed argument vector, a `.env` full of shell interpolation. Every case
+declares which it is, and `make bench` scores the field-derived subset separately:
+
+```
+33 of 34 cases behave as labelled.        # all cases
+12 of 13 cases behave as labelled.        # --field-only
+```
+
+The one failure in both is AG008, described below.
+
+**This is a regression gate, not a precision estimate.** It says known defects stay fixed
+on 34 cases chosen partly because they once broke. It is not a prediction about your
+repository and should not be read as one: a corpus this size cannot support that claim, and
+a corpus whose negatives were selected from observed failures is biased towards passing by
+construction. The field-only score exists to make that bias visible rather than argue it
+away.
+
+There is also a [labelled dataset](datasets/field-2026-07-29/) of 73 findings from five
+real agent projects. It is **not** an accuracy claim: it is not reproducible from this
+repository, and its labels carry a bias documented in that directory — the same reader
+labelled them twice and disagreed with himself on a quarter of them, always in the same
+direction. It ships so the labels can be argued with.
+
+## Known limitations
+
+Read these before deciding whether to run it.
+
+- **AG008 has a known false positive**, at 50% precision on the corpus. It cannot tell a
+  tool deleting a caller-supplied path from a function deleting a temp file it created
+  itself; that needs data flow it does not have. Recorded as a strict `xfail` so it
+  cannot be quietly closed. See [docs/DECISIONS.md](docs/DECISIONS.md).
+- **Rules have been narrowed to remove false positives, losing recall in the process.**
+  AG003 no longer flags `function_map` at all; AG005 no longer matches `file_path="/"`;
+  AG006 no longer flags a call merely because its argument is named `url`; AG007 no longer
+  matches a JS tool registered via a plain `function(`; AG002 no longer flags `eval` or
+  `exec` over a literal or a module-level constant. Every trade and its reasoning is in
+  [docs/DECISIONS.md](docs/DECISIONS.md).
+- **Findings in `tests/`, `examples/`, `docs/`, and vendored paths are downgraded or
+  suppressed.** A real credential committed under `tests/` reports at Medium and will not
+  fail your build. This is deliberate — fixtures were the largest false-positive source
+  measured — but it is a real blind spot if your layout is unusual.
+- **AG004's pattern is quadratic, bounded at 4096 characters per line — not linear.**
+  Rewriting it took a 28 KB single line from 34 seconds to 32 milliseconds, but the curve
+  is still roughly 4× per doubling, so the safety comes from the cap rather than the
+  rewrite. AG001 opts out of the cap in order to read minified bundles whole, and is held
+  linear by `python -m tools.measure_linearity --check` in CI.
+- **JavaScript and TypeScript are analysed lexically**, not with a full parser. Python
+  gets an AST; JS/TS gets regexes over comment- and string-aware regions.
+- **No dependency vulnerability scanning.** AG009 was deleted; use `pip-audit`,
+  `osv-scanner`, or Dependabot. See [#16](https://github.com/amic25/agentguard/issues/16).
+- **Unverified:** Windows and macOS. Every test run has been Linux. SARIF is schema-valid
+  and confirmed to render in GitHub code scanning; nothing else is confirmed.
+
+A clean scan is not a certification. It means these rules found nothing.
 
 ## Why AgentGuard?
 
@@ -27,17 +100,17 @@ Agent applications combine untrusted natural-language input with credentials, to
 
 | What it checks | Examples | Rule |
 |---|---|---|
-| Secrets | OpenAI/AWS/GitHub keys, private keys, assigned credentials | `AG001` |
+| Secrets | OpenAI/AWS/GitHub keys, private keys, assigned credentials, `.env` values | `AG001` |
 | Code execution | `eval`, `os.system`, shell subprocesses, Node child processes | `AG002` |
 | Tool permissions | broad LangChain/CrewAI tools, dangerous flags, MCP wildcards | `AG003` |
 | Prompt injection | untrusted web, document, request, or tool output in instructions | `AG004` |
 | File access | user-controlled paths and broad filesystem roots | `AG005` |
-| External APIs | plaintext HTTP, caller-controlled URLs, SSRF paths | `AG006` |
+| External APIs | plaintext HTTP, and requests taking a named untrusted source | `AG006` |
 | Input validation | tools without strict typed or JSON schemas | `AG007` |
 | Agent privileges | consequential actions without approval gates | `AG008` |
 | Dependencies | unpinned requirements | `AG010` |
 
-AgentGuard recognizes common patterns from LangChain, CrewAI, AutoGen, OpenAI Agents/API applications, and MCP clients/servers. The rules are framework-tolerant: they inspect the security behavior rather than requiring one exact SDK version.
+The rules were written against patterns from LangChain, CrewAI, AutoGen, OpenAI Agents, and MCP clients and servers, and inspect behaviour rather than requiring one SDK version. Coverage of any given framework is whatever the corpus demonstrates — see `tests/corpus/`.
 
 ## Install
 
@@ -200,16 +273,20 @@ python -m pip install -e '.[dev]'
 make check
 ```
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) or one of the [good first issue specifications](docs/GOOD_FIRST_ISSUES.md). Security reports should follow [SECURITY.md](SECURITY.md), not a public issue.
+Contributions are welcome, and a report that a finding is wrong is the most useful kind —
+see [SUPPORT.md](SUPPORT.md). Start with [CONTRIBUTING.md](CONTRIBUTING.md) or the
+[good first issues](docs/GOOD_FIRST_ISSUES.md). Security reports follow
+[SECURITY.md](SECURITY.md), not a public issue.
+
+Reference: [decisions and their costs](docs/DECISIONS.md) ·
+[rule identifier policy](docs/RULE_IDS.md) · [CI configuration notes](docs/CI_SETUP.md)
 
 ## Roadmap
 
-- Deeper framework data-flow analysis and cross-file call graphs
-- Dependency scanning delegated to pip-audit/osv-scanner, normalized into one report ([#16](https://github.com/amic25/agentguard/issues/16))
-- Policy packs for MCP, financial, healthcare, and enterprise agents
-- Baseline/diff scanning for gradual adoption
-- IDE integrations and an LSP
-- Signed releases and Homebrew packaging
+- Data flow sufficient to close AG008's known false positive
+- Corpus coverage for AG003 and AG006, which the current corpus under-tests
+- Dependency scanning delegated to pip-audit/osv-scanner, normalised into one report ([#16](https://github.com/amic25/agentguard/issues/16))
+- Baseline/suppression file so the tool can be adopted on a repository that is already dirty
 
 Details and acceptance criteria live in [ROADMAP.md](ROADMAP.md).
 

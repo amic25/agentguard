@@ -24,7 +24,11 @@ from agentguard.scanner import Scanner
         ("requirements.txt", "langchain", "AG010"),
         ("agent.ts", "execSync(command)", "AG002"),
         ("agent.ts", "const prompt = `Read ${web_content}`", "AG004"),
-        ("agent.ts", "fetch(url)", "AG006"),
+        # `fetch(url)` used to be asserted here. It was a wrong expectation defending a
+        # false positive, and it is now a corpus true negative
+        # (true_negatives/js_fetch_local_url.js) so the rule is measured on it rather than
+        # asserted about. This case keeps the positive direction covered.
+        ("agent.ts", "fetch(user_input)", "AG006"),
         ("agent.ts", "tool({ name: 'lookup', execute: run })", "AG007"),
     ],
 )

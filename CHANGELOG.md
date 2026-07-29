@@ -101,7 +101,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
   repository you own, or move those keys to an operator-supplied file. `agentguard init` now emits
   the repository-safe subset.
 
-## [0.1.0] - 2026-07-16
+## [0.1.0] - 2026-07-16 — NEVER PUBLISHED
+
+> **This release does not exist.** The entry below was written in advance and the release
+> was never cut: no `v0.1.0` tag was ever pushed, and nothing was published to PyPI. It is
+> kept rather than deleted because a corrected record is better history than a clean one —
+> and because anyone reading `[0.1.0]` elsewhere in this file needs to know it never
+> shipped. The first published release will be `0.2.0`.
 
 ### Added
 
@@ -111,5 +117,5 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Configurable severity thresholds, rule suppression, severity overrides, and module/entry-point plugins.
 - Docker image, typed Python package, tests, CI, CodeQL, dependency review, release workflow, and open-source governance files.
 
-[Unreleased]: https://github.com/amic25/agentguard/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/amic25/agentguard/releases/tag/v0.1.0
+[Unreleased]: https://github.com/amic25/agentguard/commits/main
+[0.1.0]: # (never published - no tag exists)

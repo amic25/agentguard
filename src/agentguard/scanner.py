@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from agentguard.config import Config
 from agentguard.context import SourceFile
-from agentguard.models import Finding, ScanResult, Severity
+from agentguard.models import Finding, ScanResult, Severity, TruncatedLine
 from agentguard.plugins import load_plugins
 from agentguard.rules import BUILTIN_RULES, Rule
 
@@ -29,6 +30,11 @@ LANGUAGES = {
     ".yml": "manifest",
 }
 SPECIAL_FILES = {"Dockerfile", "Pipfile", "package-lock.json", "requirements.txt"}
+
+#: `.env` is where credentials live. A secrets scanner that cannot read the canonical
+#: secrets file is hard to defend, and these files carry no extension, so the suffix map
+#: never reached them. Covers `.env`, `.env.local`, `.env.production`, and templates.
+_ENV_FILE = re.compile(r"^\.env(?:\..+)?$")
 
 
 class Scanner:
@@ -54,7 +60,7 @@ class Scanner:
         errors: list[str] = []
         scanned = 0
         skipped = 0
-        truncated = 0
+        truncated: list[TruncatedLine] = []
         for path in self._files(target_path, root):
             try:
                 if path.stat().st_size > self.config.max_file_size_kb * 1024:
@@ -66,16 +72,25 @@ class Scanner:
                 skipped += 1
                 continue
             scanned += 1
+            language = (
+                "manifest" if _ENV_FILE.match(path.name) else LANGUAGES.get(path.suffix.lower(), "manifest")
+            )
             source = SourceFile(
                 path,
                 root,
                 content,
-                LANGUAGES.get(path.suffix.lower(), "manifest"),
+                language,
                 max_line_length=self.config.max_line_length,
             )
+            # Which bound each rule ran under, so coverage reflects what was actually
+            # withheld rather than what the default would have withheld.
+            bounds_applied: set[int] = set()
             for rule in self.rules:
                 if not rule.metadata.applies_to(source):
                     continue
+                declared = rule.metadata.max_line_length
+                source.active_bound = self.config.max_line_length if declared is None else declared
+                bounds_applied.add(source.active_bound)
                 try:
                     for finding in rule.scan(source):
                         if self._suppressed(source, finding):
@@ -89,7 +104,13 @@ class Scanner:
                         )
                 except Exception as exc:
                     errors.append(f"{rule.metadata.id} failed on {source.relative_path}: {exc}")
-            truncated += source.truncated_lines
+            # Report against the *tightest* bound that actually applied. A line is a
+            # coverage gap if any rule was shown less than all of it, so the smallest
+            # positive bound is what decides — using the largest would miss every line
+            # falling between two different rules' bounds.
+            binding = min((b for b in bounds_applied if b > 0), default=0)
+            for number, length in source.over_bound(binding):
+                truncated.append(TruncatedLine(path, number, length, binding))
         findings.sort(
             key=lambda item: (
                 -int(item.severity),
@@ -104,7 +125,7 @@ class Scanner:
             files_scanned=scanned,
             rules_run=len(self.rules),
             skipped_files=skipped,
-            truncated_lines=truncated,
+            truncated=truncated,
             errors=errors,
             duration_ms=(time.perf_counter() - started) * 1000,
         )
@@ -121,6 +142,7 @@ class Scanner:
                 path.suffix.lower() in LANGUAGES
                 or path.name in SPECIAL_FILES
                 or path.name.startswith("requirements")
+                or _ENV_FILE.match(path.name)
             ):
                 yield path
 
@@ -156,7 +178,13 @@ class Scanner:
         ):
             return None
 
-        if source.is_fixture:
+        # A key published on purpose is not a compromise. Capped centrally rather than
+        # left to each rule, and capped rather than dropped: it is still worth knowing
+        # that a credential-shaped value is committed, in case it is the secret half.
+        if finding.metadata.get("credential_class") == "public" and finding.severity > Severity.LOW:
+            finding = replace(finding, severity=Severity.LOW)
+
+        if source.is_fixture or source.is_vendored:
             if meta.fixture_policy == "suppress":
                 return None
             if meta.fixture_policy == "downgrade":

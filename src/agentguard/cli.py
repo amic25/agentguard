@@ -50,6 +50,11 @@ def scan(
     fail_on: str = typer.Option(
         "high", help="Exit 1 when this severity or higher is found; use none to disable."
     ),
+    fail_on_incomplete: bool = typer.Option(
+        False,
+        "--fail-on-incomplete",
+        help="Also exit 2 when any line was too long to be read in full by every rule.",
+    ),
     config: Path | None = typer.Option(None, "--config", help="Path to .agentguard.yml."),
     exclude: list[str] = typer.Option([], "--exclude", help="Additional glob to exclude; repeat as needed."),
 ) -> None:
@@ -83,6 +88,16 @@ def scan(
             threshold = Severity.parse(fail_on)
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--fail-on") from exc
+    if fail_on_incomplete and not result.fully_covered:
+        # Opt-in. Truncation is declared in every report by default rather than gating,
+        # because a bounded read is a known limitation, not a malfunction. A caller who
+        # needs total coverage asks for it and gets exit 2 - the same code as any other
+        # "this result is not a clean bill of health".
+        error_console.print(
+            f"[bold red]Coverage incomplete:[/bold red] {result.truncated_lines} line(s) "
+            "were not read in full; --fail-on-incomplete was requested."
+        )
+        raise typer.Exit(code=2)
     if not result.completed:
         # Ranked above --fail-on: CI must be able to tell "found problems" (1) from
         # "the tool did not finish, so absence of findings means nothing" (2).
