@@ -53,8 +53,14 @@ Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Report vu
 
 ## Test harnesses
 
-**Run every new harness against a deliberately broken input before trusting it.** Four
+**Run every new harness against a deliberately broken input before trusting it.** Five
 harnesses in this project's history reported success while measuring nothing: two
 false-positive probes that could not distinguish the states they compared, a corpus entry
-that could never reach the policy it claimed to pin, and an aggregation check whose quoted
-variable stopped it ever splitting. A harness that cannot fail is not a harness.
+that could never reach the policy it claimed to pin, an aggregation check whose quoted
+variable stopped it ever splitting, and an equivalence run that truncated every line before
+comparing, excluding the only inputs that could have shown the regression. A harness that
+cannot fail is not a harness.
+
+The converse is also on record: the linearity gate caught a quadratic pattern written by the
+same person who had just written the gate, minutes earlier. See
+[docs/DECISIONS.md](docs/DECISIONS.md#evidence-that-the-gate-works-it-caught-its-own-author).

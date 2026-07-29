@@ -74,11 +74,48 @@ AG001 declares `UNBOUNDED` and reads whole minified lines. Everything else stays
 backtracks. The guarantee has to be enforced forever, for patterns nobody has written yet.
 
 **Why anyway:** a credential at offset 5,000 of a one-line bundle was previously invisible,
-and that is a common real leak in exactly the file shape that exceeds the bound. The cost
-is paid by `tools/measure_linearity.py --check` in CI, which discovers unbounded rules and
-their patterns by introspection and fails the build on anything non-linear. It has already
-earned its place: it caught a quadratic pattern added *in the same session that wrote it*,
-projecting to roughly 16 minutes on a 1 MB line.
+and that is a common real leak in exactly the file shape that exceeds the bound. The cost is
+paid by `tools/measure_linearity.py --check` in CI, which discovers unbounded rules and their
+patterns by introspection and fails the build on anything non-linear.
+
+### Evidence that the gate works: it caught its own author
+
+The `.env` support added in the same session needed a pattern for unquoted values. The first
+attempt was:
+
+```python
+r"(?i)^\s*(?:export\s+)?[A-Z0-9_]*(?:api[_-]?key|secret|token|password|passwd|pwd)"
+r"[A-Z0-9_]*\s*=\s*(?!['\"])(\S{12,})\s*$"
+```
+
+Two unbounded `[A-Z0-9_]*` spans around an alternation. It was written, reviewed by its
+author, and looked fine. The gate measured it:
+
+```
+AG001   _env_assignment   exponent 2.00   917.86ms @32KB   990822.2ms @1MB   SUPER-LINEAR
+```
+
+Quadratic. **918 milliseconds on 32 KB, extrapolating to roughly 16 minutes on a single
+1 MB line** — on the one rule that reads lines unbounded, in a tool whose entire premise is
+running on repositories nobody has read. A hostile file could have hung the scan.
+
+Rewritten to capture the name once and test it in Python instead of matching it with
+wildcards:
+
+```
+AG001   _env_assignment   exponent 0.99   0.29ms @32KB   9.3ms @1MB   linear
+```
+
+The point is not that a mistake was made. It is that a competent author, having just written
+the gate and being fully aware of why it existed, then wrote exactly the class of pattern it
+guards against — and did not notice until a machine measured it. A review checklist would not
+have caught this; the reviewer was the person who wrote the checklist. That is the argument
+for the gate being CI rather than a convention, and for `--check` failing the build rather
+than printing a warning.
+
+The gate validates itself against a known-cubic pattern before reporting, and refuses to
+report at all if that control comes back linear. A measurement tool that cannot demonstrate
+it detects the thing it looks for is not evidence of anything.
 
 ---
 
