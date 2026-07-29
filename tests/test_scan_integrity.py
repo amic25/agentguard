@@ -27,7 +27,15 @@ runner = CliRunner()
 class ExplodingRule(Rule):
     """A rule that fails on every file, as a broken rule would after a bad refactor."""
 
-    metadata = RuleMetadata("XX999", "Exploding", Severity.LOW, "test", "always raises")
+    metadata = RuleMetadata(
+        "XX999",
+        "Exploding",
+        Severity.LOW,
+        "test",
+        "always raises",
+        languages=frozenset({"python", "manifest"}),
+        fixture_policy="report",
+    )
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         raise RuntimeError("rule exploded")

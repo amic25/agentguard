@@ -19,6 +19,37 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - `truncated_lines` on `ScanResult` and in the JSON, Markdown, and terminal reports, so a bounded
   scan is never silently mistaken for a complete one.
 
+### Changed
+
+- **Rules declare their context; the engine enforces it.** `RuleMetadata` gained
+  `languages` (required), `ignore_regions`, `require_nodes`, and `fixture_policy`. Language
+  gating, comment/docstring/annotation awareness, node-kind gating, and test-fixture
+  handling were each being re-derived inside individual rules, differently and mostly
+  wrongly. They now live in `Scanner._admit` and apply to every rule, including plugins.
+  **Breaking for plugin authors:** `RuleMetadata` now raises unless `languages` is
+  declared. Nothing has been released, so no migration path is owed; see `docs/PLUGINS.md`.
+- Credential findings in test, fixture, example, and documentation paths are reported at
+  `Medium` with `low` confidence rather than `Critical`, and carry `fixture_path` metadata.
+  Live credentials do reach test fixtures, so they are not silenced — but they no longer
+  block the default `--fail-on high` gate. Every other rule is suppressed on those paths.
+
+### Fixed
+
+- `AG002` read any `.exec()` or `.eval()` method as the builtin, because call-name
+  resolution returned the bare attribute when the receiver was not a plain name.
+  `super().exec(*command)` was reported as critical arbitrary code execution.
+- `AG002` reported `eval` and `exec` over expressions that are entirely literal, where
+  there is no attacker-controlled input.
+- `AG001` matched inside docstrings, comments, and type annotations, so
+  `token: "contextvars.Token[Any]"` was reported as a committed credential.
+- `AG005` ran against manifests, reporting Dependabot's `directory: "/"` as unrestricted
+  filesystem access, and matched `path` as a substring, reporting the HTTP route
+  `streamable_http_path="/"` as a broad filesystem root.
+- `AG007` matched every JavaScript `function(`, reporting IIFEs in vendored analytics
+  snippets as unvalidated agent tools.
+- `AG008` matched definition sites, reporting `def delete_file(...)` as an unapproved
+  high-impact action.
+
 ### Removed
 
 - **`AG009` (known vulnerable dependency).** It bundled three hand-maintained advisories and read

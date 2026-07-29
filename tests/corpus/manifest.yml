@@ -63,13 +63,22 @@ true_positives:
     expect: [AG002]
     why: execSync on a caller-supplied command in TypeScript.
 
-true_negatives:
-  secrets_in_test_fixtures.py:
-    expect: []
+  root_dir_broad.py:
+    expect: [AG005]
     why: >-
-      Credential-shaped literals in a test module are fixtures. Measured as the single
-      largest false-positive source across five real agent projects.
+      An agent workspace rooted at "/" grants the whole filesystem. Kept as a true
+      positive so that tightening AG005's `path` word boundary is measured rather than
+      assumed harmless.
 
+  secrets_in_test_fixtures.py:
+    expect: [AG001]
+    why: >-
+      Credentials do get committed to test fixtures, so this must still be reported -
+      but at reduced severity and confidence, because credential-shaped literals in tests
+      are usually fixtures. This file exists to pin that downgrade, not to demand silence.
+      See tests/test_fixture_policy.py.
+
+true_negatives:
   .env.example:
     expect: []
     why: >-

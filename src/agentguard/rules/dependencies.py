@@ -22,6 +22,7 @@ class UnpinnedDependencyRule(Rule):
         Severity.LOW,
         "dependencies",
         "Detects reproducibility and supply-chain gaps.",
+        languages=frozenset({"manifest"}),
     )
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:

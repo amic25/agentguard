@@ -3,8 +3,23 @@
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from agentguard.regions import Regions, analyse_javascript, analyse_manifest, analyse_python
+
+#: Languages a rule may declare. "manifest" covers JSON, YAML, TOML, and requirements files.
+KNOWN_LANGUAGES = frozenset({"python", "javascript", "typescript", "manifest"})
+
+#: Path shapes that mean "this file exists to exercise code, or to show how to use it".
+#: Credential-shaped literals here are overwhelmingly fixtures — measured as the single
+#: largest false-positive source across five real agent projects.
+_FIXTURE_PATH = re.compile(
+    r"(?i)(?:^|/)(?:tests?|testing|__tests__|spec|specs|fixtures?|examples?|samples?|"
+    r"demos?|docs?|docs_src|tutorials?|integration_tests?|e2e|benchmarks?)(?:/|$)"
+)
+_FIXTURE_NAME = re.compile(r"(?i)^(?:test_.*|.*_test|conftest|.*\.spec|.*\.test)$")
 
 #: Longest line handed to a line-oriented rule. Past this, a "line" is a minified bundle
 #: or generated data, not something a per-line regex can say anything useful about, and
@@ -25,7 +40,33 @@ class SourceFile:
     _tree: ast.AST | None = field(default=None, init=False, repr=False)
     _parsed: bool = field(default=False, init=False, repr=False)
     _lines: list[str] | None = field(default=None, init=False, repr=False)
+    _regions: Regions | None = field(default=None, init=False, repr=False)
     truncated_lines: int = field(default=0, init=False)
+
+    @property
+    def is_fixture(self) -> bool:
+        """True for test, fixture, example, and documentation files.
+
+        Judged from the path rather than the content, because that is the signal a
+        reviewer uses too: a credential under ``tests/`` is a fixture until shown
+        otherwise, and a call to ``delete_file`` in ``examples/`` is a demonstration.
+        """
+        try:
+            relative = self.relative_path.as_posix()
+        except ValueError:  # pragma: no cover - path outside root
+            relative = self.path.as_posix()
+        return bool(_FIXTURE_PATH.search(relative) or _FIXTURE_NAME.match(self.path.stem))
+
+    def regions(self) -> Regions:
+        """Comment, string, docstring, and annotation spans, computed once per file."""
+        if self._regions is None:
+            if self.language == "python":
+                self._regions = analyse_python(self.content, self.python_tree())
+            elif self.language in {"javascript", "typescript"}:
+                self._regions = analyse_javascript(self.content)
+            else:
+                self._regions = analyse_manifest(self.content)
+        return self._regions
 
     @property
     def lines(self) -> list[str]:

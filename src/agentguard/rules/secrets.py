@@ -18,6 +18,14 @@ class HardcodedSecretRule(Rule):
         Severity.CRITICAL,
         "secrets",
         "Detects credentials committed to source files.",
+        languages=frozenset({"python", "javascript", "typescript", "manifest"}),
+        # Ordinary string literals are exactly where credentials live, so `string` is not
+        # ignored. Docstrings and comments are documentation, and `annotation` keeps a
+        # type like `token: "contextvars.Token[Any]"` from reading as a credential.
+        ignore_regions=frozenset({"comment", "docstring", "annotation"}),
+        # Live credentials really do get committed to fixtures, so these are reported at
+        # reduced severity rather than dropped.
+        fixture_policy="downgrade",
     )
     _patterns = (
         ("OpenAI API key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
@@ -38,6 +46,10 @@ class HardcodedSecretRule(Rule):
                 if not match:
                     continue
                 value = match.group(1) if match.lastindex else match.group(0)
+                # Point at the credential, not at the identifier before it. The engine
+                # tests regions at this column, and `token: "contextvars.Token[Any]"` is
+                # only distinguishable from a real credential by where the value sits.
+                column = (match.start(1) if match.lastindex else match.start()) + 1
                 if self._placeholder.search(value):
                     continue
                 if kind == "assigned credential" and self._entropy(value) < 3.0:
@@ -48,7 +60,7 @@ class HardcodedSecretRule(Rule):
                     f"A likely {kind} is embedded directly in source code.",
                     "Anyone with repository or build-artifact access may impersonate the service or access protected data.",
                     "Revoke and rotate the credential, remove it from history, and load the replacement from a secret manager or environment variable.",
-                    column=match.start() + 1,
+                    column=column,
                 )
                 break
 

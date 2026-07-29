@@ -352,3 +352,111 @@ Decisions taken alone:
 
 Next: unit 6 — F2's four root causes, declaratively in the engine, then re-run bench and
 report per-rule deltas.
+
+---
+
+## Unit 6 — F2's four root causes, declaratively — 2026-07-29
+
+Status: complete
+Changed: `src/agentguard/regions.py` (new), `rules/base.py`, `context.py`, `scanner.py`,
+all four rule modules, `tests/test_rule_context.py` (new), corpus, CHANGELOG, PLUGINS.md
+
+Verified:
+```
+ruff format --check src tests tools  → 29 files already formatted
+ruff check src tests tools           → All checks passed!
+mypy src                             → Success: no issues found in 15 source files
+pytest -q                            → 143 passed, 92.65% coverage
+agentguard scan src --fail-on medium → exit 0, no findings
+```
+
+### BENCH DELTA — corpus
+
+| Rule | Precision before | after | Recall before | after |
+|---|---:|---:|---:|---:|
+| AG001 | 25.0% | **100.0%** | 100% | 100% |
+| AG002 | 50.0% | **100.0%** | 100% | 100% |
+| AG003 | 100.0% | 100.0% | 100% | 100% |
+| AG004 | 100.0% | 100.0% | 100% | 100% |
+| AG005 | 33.3% | **100.0%** | 100% | 100% |
+| AG006 | 100.0% | 100.0% | 100% | 100% |
+| AG007 | 33.3% | **100.0%** | 100% | 100% |
+| AG008 | 50.0% | **100.0%** | 100% | 100% |
+| AG010 | 100.0% | 100.0% | 100% | 100% |
+| **all** | **50.0%** | **100.0%** | **100%** | **100%** |
+
+Recall did not move. No false positive was traded for a corpus false negative.
+
+### FIELD DELTA — the number that matters
+
+The corpus is 24 files. Re-ran the five real projects from AUDIT.md (4,750 files):
+
+| | Before | After |
+|---|---:|---:|
+| Total findings | 233 | **73** (−69%) |
+| Findings at Critical/High (what gates CI at the default) | 208 | **17** (−92%) |
+| AG001 at Critical | 63 | **3** |
+
+Per rule, total field findings: AG001 63→57 (of which 54 are now Medium fixture
+downgrades), AG002 15→4, AG003 64→4, AG005 29→1, AG006 4→2, AG007 8→0, AG008 37→5,
+AG010 13→0.
+
+Hand-triaged the 17 remaining gating findings: roughly 12 are genuine — real `exec(code, ns)`,
+`subprocess.run([...], shell=True)`, two committed API keys, `allow_delegation = True`.
+Roughly 5 remain false: AG003's bare `function_map\s*=` still matches a local dict
+comprehension (2), AG005's `path = "/" + path` (1), and two borderline `delete_file(...)`
+calls inside sandbox tooling. Estimated gating precision moved from ~7.7% to ~70%.
+
+**All five projects still exit 1.** That is now correct behaviour rather than noise: each
+has at least one genuine Critical.
+
+### Trades made — false positives bought with false negatives
+
+Per the brief, stated explicitly rather than buried. Each was kept because precision was
+the binding constraint for that rule in the field measurement.
+
+1. **AG005 `\b` on `path`** — `file_path="/"`, `mount_path="/"`, `drive_path="/"` no longer
+   match. Real recall loss. Kept: AG005 measured 100% false positives in the field (29/29),
+   and `streamable_http_path` alone accounted for 8.
+2. **AG007 dropped `function(`** — a JS tool registered through a bare function expression
+   is no longer detected. Kept: AG007 measured 100% false positives (8/8), and the pattern
+   matched every function expression in every JavaScript file.
+3. **`fixture_policy="suppress"`** — non-secret findings in `tests/`, `examples/`, `docs/`
+   are dropped entirely. This is the largest recall loss: AG010 went 13→0 in the field
+   because every hit was under `libs/cli/examples/`. Deliberate, per decision 6.
+4. **`eval`/`exec` over wholly literal arguments** — no longer reported. Small: a literal
+   passed to `eval` still executes, but carries no attacker-controlled input.
+5. **Call-name resolution returns "" for non-name receivers** — `get_module().system(cmd)`
+   is no longer matched. Kept: the alternative resolved every `x().exec()` to the builtin.
+
+### Design notes
+
+`regions.py` derives comment, docstring, string, and annotation spans from each language's
+own grammar — `tokenize` and `ast` for Python, a small lexer for JS/TS, `#` for manifests.
+Rules declare what they will not match inside; `Scanner._admit` enforces it. A plugin
+inherits all of it without asking, and cannot opt out — pinned by
+`test_engine_gates_apply_to_third_party_rules`.
+
+The schema is enforced at construction, not documented: `RuleMetadata` raises unless
+`languages` is declared. It caught three of this repository's own test helpers on the
+first run, which is the behaviour working.
+
+Decisions taken alone:
+1. **Fixture downgrade clamps to MEDIUM, not one step down.** A `CRITICAL→HIGH` step still
+   trips the default `--fail-on high`, so fixture credentials would keep blocking CI —
+   the exact noise decision 6 exists to remove. Clamping to Medium reports them without
+   gating. Decision 6 said "downgrade" without a magnitude; this is the reading that makes
+   the policy do anything.
+2. **`.env.example` left undiscovered rather than extending file discovery.** Adding a new
+   discovered file type is a scope and behaviour change that belongs in its own unit with
+   its own measurement. Recorded as a known gap in the corpus and pinned by a test.
+3. **`AG001` also ignores the `annotation` region**, which is not in the default set. Real
+   credentials are ordinary string literals, so `string` is deliberately *not* ignored.
+4. **`docs/` counts as a fixture path.** It is where tutorials live, and tutorial
+   credentials were 6 of the field false positives.
+
+Not verified: whether the ~5 remaining field false positives are worth further tuning —
+that needs AG003 and AG006 corpus coverage, which the corpus currently lacks (recorded in
+unit 5 as a known limitation).
+
+Next: unit 7 — docs reconciliation, then unit 8 — stop and report.
