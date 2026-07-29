@@ -117,15 +117,34 @@ Create `.agentguard.yml`:
 ```yaml
 exclude:
   - generated/**
+max_file_size_kb: 1024
+follow_symlinks: false
+```
+
+A config file discovered inside the repository being scanned is **untrusted input** — AgentGuard is
+built to run on code you have not read. Such a file may only make a scan stricter: exclusions are
+added to the defaults, `max_file_size_kb` may only be lowered, and `follow_symlinks` may only be
+turned off.
+
+`plugins`, `disabled_rules`, and `severity_overrides` can execute code or weaken a scan, so they are
+rejected in a discovered config. To use them, vouch for the file explicitly — this is the operator
+saying "I have read this":
+
+```bash
+agentguard scan . --config .agentguard.yml
+```
+
+```yaml
+# only honoured via --config
 disabled_rules:
   - AG010
 severity_overrides:
   AG006: high
 plugins:
   - company_agent_rules
-max_file_size_kb: 1024
-follow_symlinks: false
 ```
+
+See [Security model](docs/SECURITY_MODEL.md#configuration-trust-boundary) for the full boundary.
 
 Suppress a reviewed false positive on the affected or previous line. Suppressions should explain the compensating control in code review.
 
@@ -140,7 +159,7 @@ Every finding includes severity (`Critical`, `High`, `Medium`, or `Low`), stable
 
 ## Plugins
 
-Custom rules can be loaded from a module in `.agentguard.yml` or distributed as a Python package with an `agentguard.rules` entry point. The API uses the same stable `Rule`, `RuleMetadata`, `SourceFile`, and `Finding` objects as built-ins.
+Custom rules can be loaded from a module named in an operator-supplied config (`--config`), or distributed as a Python package with an `agentguard.rules` entry point. Plugins execute inside the scanner process, so they are never loaded from a config discovered in the repository under scan. The API uses the same stable `Rule`, `RuleMetadata`, `SourceFile`, and `Finding` objects as built-ins.
 
 See [Plugin authoring](docs/PLUGINS.md) for a complete example and packaging instructions.
 

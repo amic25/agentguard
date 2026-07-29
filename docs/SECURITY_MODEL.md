@@ -19,7 +19,22 @@ The security properties AgentGuard encourages are least privilege, explicit trus
 
 ## Scanner threat model
 
-The scanned repository is untrusted. AgentGuard reads supported UTF-8 files but does not import, build, install, or execute them. It skips symlinks and caps file size by default. Reporters do not print matched source lines or secret values. Explicit Python plugin modules are trusted code and execute in the AgentGuard process; only enable plugins from trusted packages.
+The scanned repository is untrusted. AgentGuard reads supported UTF-8 files but does not import, build, install, or execute them. It skips symlinks and caps file size by default. Reporters do not print matched source lines or secret values.
+
+### Configuration trust boundary
+
+Configuration is the one channel through which a scanned repository can influence the scanner, so it is split into two types that cannot be confused for one another:
+
+| | Source | Trust | May set |
+|---|---|---|---|
+| `RepoConfig` | `.agentguard.yml` discovered in the repository under scan | **Untrusted** | `exclude`, `max_file_size_kb`, `follow_symlinks` |
+| `Config` | a path the operator passes to `--config` | Trusted | all of the above, plus `plugins`, `disabled_rules`, `severity_overrides` |
+
+`plugins` is not a field on the untrusted type. A repository cannot name a module for the scanner to import, because there is nowhere in `RepoConfig` to put the name — the boundary is held by the shape of the type, not by a check that a later refactor could drop.
+
+The two are combined only by `Config.tightened_by`, which is monotone toward safety: exclusions are append-only, `max_file_size_kb` takes the minimum, and `follow_symlinks` takes the conjunction. A hostile repository can therefore make its own scan stricter, slower, or narrower — never laxer. Supplying an operator-only key in a discovered config is an error, not a silent ignore, and fails the scan with exit code 2.
+
+Passing `--config` is the operator's explicit act of vouching for a file. Plugin modules named there are trusted code and execute in the AgentGuard process; only enable plugins from trusted packages. Rules registered through `agentguard.rules` entry points are likewise trusted, at the same level as any installed Python package.
 
 ## Limitations
 
