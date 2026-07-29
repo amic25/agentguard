@@ -503,3 +503,69 @@ appears in the README. The only numbers in the repository are in `WORKLOG.md` an
 Bench delta: none — documentation only.
 Decisions taken alone: none.
 Next: unit 8 — stop and report.
+
+---
+
+## Unit 8 — final state — 2026-07-29
+
+Status: complete. Queue finished. Nothing pushed; no PR opened; history not rewritten.
+
+Branch `audit/phase-0`, 9 commits ahead of `main`. `main` untouched.
+
+### Final verification
+
+```
+Python 3.10.20 / 3.11.15 / 3.12.13 / 3.13.14  → 142 passed, 1 skipped (each)
+ruff format --check src tests tools           → 29 files already formatted
+ruff check src tests tools                    → All checks passed!
+mypy src                                      → Success: no issues found in 15 source files
+python -m tools.bench                         → 100.0% precision, 100.0% recall
+agentguard scan src --fail-on medium          → exit 0
+python -m build --wheel                       → Requires-Dist: pyyaml, rich, typer
+```
+The 1 skip is the git-hygiene check; the dev container has no git. It runs on the host
+and in CI, and passes.
+
+### Bench: before and after
+
+| Rule | Precision before | after | Recall before | after |
+|---|---:|---:|---:|---:|
+| AG001 | 25.0% | 100.0% | 100% | 100% |
+| AG002 | 50.0% | 100.0% | 100% | 100% |
+| AG003 | 100.0% | 100.0% | 100% | 100% |
+| AG004 | 100.0% | 100.0% | 100% | 100% |
+| AG005 | 33.3% | 100.0% | 100% | 100% |
+| AG006 | 100.0% | 100.0% | 100% | 100% |
+| AG007 | 33.3% | 100.0% | 100% | 100% |
+| AG008 | 50.0% | 100.0% | 100% | 100% |
+| AG010 | 100.0% | 100.0% | 100% | 100% |
+| **all** | **50.0%** | **100.0%** | **100%** | **100%** |
+
+Field, five real projects, 4,750 files: 233 findings → 73; 208 → 17 at gating severity.
+
+### Could not verify
+
+- **Windows and native macOS.** Every run was a Linux container. Path handling, symlink
+  behaviour, and the `git ls-files` hygiene check are untested on either.
+- **SARIF rendering in the GitHub code-scanning UI.** Validated against the official
+  2.1.0 schema only. AUDIT.md F7 asked for UI verification; that still has not happened.
+- **The corpus is 24 files.** It flatters AG003 and AG006, which score 100% precision on
+  it and measured ~98-100% false positives in the field. Corpus numbers are a regression
+  signal, not a population estimate.
+- **The ~5 remaining field false positives** were hand-triaged by one reader, once. The
+  triage is a judgement, not a measurement.
+- **Fixture-path classification is heuristic.** A project that puts production code under
+  `examples/` will lose findings, and nothing detects that.
+- **`.env` files are still never scanned.** Real credentials in a real `.env` are missed
+  entirely. Known, pinned by a test, not fixed.
+- **CI has not run.** Nothing was pushed, so the workflow changes — bench step, `tools`
+  added to lint paths — are unverified on GitHub's runners.
+
+### Deliberately not done
+
+- No push, no PR, per hard stops.
+- AG009's replacement is filed as #16 and not implemented.
+- `.env` discovery not extended: a coverage change needs its own unit and its own
+  measurement.
+- No rule other than AG009 deleted or disabled.
+- No runtime dependency added; one (`packaging`) was removed.
