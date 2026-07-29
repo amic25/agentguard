@@ -751,3 +751,120 @@ Or merge once, leaving the defect in place:
 ```
 gh pr merge 17 --repo amic25/agentguard --squash --admin
 ```
+
+---
+
+## Unit 12 — STOPPED: two stop conditions triggered — 2026-07-29
+
+Status: **stopped, awaiting a decision.** Queue items 2, 4, and 10 consume the field
+number and were not started. Nothing was fixed.
+
+### Stop condition 1 — the hand triage materially disagrees
+
+Re-triaged a deterministic stratified sample of 20 of the 73 field findings (round-robin
+by rule so every rule appears), reading each with four lines of surrounding context.
+
+**Strict agreement: 13/20 = 65%. Divergence: 5/20 = 25%. Two further partials.**
+
+| # | Rule | New verdict | Earlier | |
+|---|---|---|---|---|
+| 1 | AG001 | FP — PostHog `phc_` is a public, write-only ingest key | TP | **diverge** |
+| 2 | AG002 | FP — `exec(_NAMESPACE_IMPORTS, ns)`, a module constant | TP | **diverge** |
+| 3 | AG003 | FP — crewAI setting delegation on its own manager agent | TP | **diverge** |
+| 4 | AG005 | FP — `path = "/" + path` is a normaliser | FP | agree |
+| 5 | AG006 | FP — fixed host, https, timeout | FP | agree |
+| 6 | AG008 | FP — human-typed CLI, not agent-autonomous | borderline | partial |
+| 7 | AG001 | FP-substance, downgraded by policy | same | agree |
+| 8 | AG002 | TP — `exec(code, ns)` from MCP tool input | TP | agree |
+| 9 | AG003 | FP — framework internals, same as #3 | TP | **diverge** |
+| 10 | AG006 | FP — fixed host, timeout | FP | agree |
+| 11 | AG008 | TP (weak) — agent-invocable delete, sandboxed | borderline | agree |
+| 12 | AG001 | FP-substance, downgraded | same | agree |
+| 13 | AG002 | TP — `exec(compile(...))` of a flow script | TP | agree |
+| 14 | AG003 | FP — local dict named `function_map` | FP | agree |
+| 15 | AG008 | FP — internal temp-file cleanup | borderline | partial |
+| 16 | AG001 | FP-substance — the line *asserts the key is absent* | same | agree |
+| 17 | AG002 | FP — `shell=True` but every argv element is constant | TP | **diverge** |
+| 18 | AG003 | FP — local named `function_map` | FP | agree |
+| 19 | AG008 | TP (weak) — agent-driven apply_patch delete | borderline | agree |
+| 20 | AG001 | FP-substance, downgraded | same | agree |
+
+**All five divergences run the same direction: earlier TP, now FP.** That is a systematic
+optimism bias, not noise. Two recurring causes:
+
+1. **Committed ≠ compromisable.** A PostHog project key and a Supabase anon key are
+   published deliberately. Reporting them as Critical "credential compromise" is wrong
+   even though a credential is literally committed.
+2. **Framework internals ≠ application configuration.** `allow_delegation = True` inside
+   crewAI's own `_create_manager_agent` is the framework implementing its documented
+   mode. AG003 cannot tell a library defining a capability from an application granting one.
+
+Also: `subprocess.run([cmd, ...], shell=True)` where `cmd` iterates a constant list is a
+real portability bug and not a security finding — no attacker input reaches it.
+
+**Methodological caveat, stated plainly:** this is the same reader re-reading, not an
+independent triage. Genuine independence needs a second person. A same-reader re-read
+diverging 25% is a floor on the error, not a measurement of it.
+
+**Consequence.** The earlier claim that "roughly 12 of the 17 gating findings are genuine"
+does not survive. On this sample the gating TPs are #8, #11, #13, #19 — and two of those
+are weak. **The 233 → 73 and 208 → 17 headline is directionally right but its quality
+split is not trustworthy, and nothing should be optimised against it until re-triaged.**
+
+### Stop condition 2 — truncation is a real detection hole
+
+**The 1,039,776-line equivalence run proved nothing about over-cap lines.** The harness
+contained `ln = ln[:4096]`, so every line was truncated *before* comparison. The
+population that could show the regression was excluded by construction. This is the same
+class of error as the earlier bad probes, and it is the fourth occurrence.
+
+How much of that corpus was over-cap: **1 line in 1,039,808** (browser-use
+`demo_mode.py:485`, 19,359 chars). So the equivalence claim itself is barely weakened —
+but only because those five projects contain almost no minified code.
+
+Detection past the cap, tested against realistic minified-bundle shapes:
+
+```
+key_at_100       AG001 findings=1  truncated_lines=0
+key_at_3000      AG001 findings=1  truncated_lines=0
+key_at_5000      AG001 findings=0  truncated_lines=1   <-- missed
+key_at_20000     AG001 findings=0  truncated_lines=1   <-- missed
+```
+
+**A credential past character 4096 of a minified line is not detected.** The scan reports
+`truncated_lines=1` and exits 0. It is disclosed, but the finding is gone, and "clean"
+is what a reader takes from exit 0.
+
+This is a recall defect in the flagship category. Bundled JS with an inlined key is a
+common real leak, and it is precisely the shape that exceeds the cap.
+
+Not fixed, per instruction. Options, unevaluated: raise the cap for secret rules only;
+run secret patterns over untruncated content while other rules stay bounded; or treat a
+truncated line as scan incompleteness (exit 2) rather than a reported statistic.
+
+### Claim surfaces outside version control
+
+Asked for. Found, beyond the GitHub About field being fixed by hand:
+
+- **GitHub repo topics** — `gh api repos/OWNER/REPO/topics`. Currently includes `sast`
+  and `security`, no false claim, but it is an unversioned claim surface.
+- **PyPI project page** — renders `pyproject.toml` `description` and README at publish
+  time and cannot be edited without a release. Nothing is published yet, so this is the
+  last moment it is free.
+- **The social preview image** (`docs/assets/social-preview.svg` is in-repo, but the
+  *uploaded* preview is a repo setting).
+- **Issue #16's own body**, which describes future dependency scanning.
+- `docs/assets/demo.svg` is in-repo and greppable, but it renders numbers as an image, so
+  a text sweep will not catch a stale figure inside it. It already needed a manual edit
+  once (10 rules → 9).
+
+### Not done
+
+Queue items 2 (corpus repair), 4 (mechanism split), and 10 (README) all consume the field
+number and are blocked behind a re-triage decision. Items 5–9 are independent and were not
+started, because the queue is ordered and both stop conditions fired in item 1 and item 3.
+
+Bench delta: none — no code changed.
+Decisions taken alone: ran item 3 out of order, because it is itself a declared stop
+condition and answering it costs minutes; reporting one stop condition while a second was
+knowably true would have wasted a round trip.
