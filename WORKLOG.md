@@ -144,3 +144,89 @@ Decisions taken alone:
 
 Next: unit 3 — AG004 ReDoS. Note this is a rule change, and per the brief no rule may
 change before `make bench` exists (unit 5). Sequencing question resolved below.
+
+---
+
+## Unit 3 — AG004 ReDoS — 2026-07-29
+
+Status: complete
+Changed: `src/agentguard/rules/code.py`, `src/agentguard/context.py`,
+`src/agentguard/config.py`, `src/agentguard/scanner.py`, `src/agentguard/models.py`,
+`src/agentguard/reporters.py`, `tests/test_redos.py` (new), README, SECURITY_MODEL, CHANGELOG
+
+Verified:
+```
+ruff format --check src tests   → 24 files already formatted
+ruff check src tests            → All checks passed!
+mypy src                        → Success: no issues found in 14 source files
+pytest -q                       → 113 passed, 93.04% coverage
+```
+
+### Sequencing conflict, and how it was resolved
+
+Unit 3 changes a rule, but the hard stops say no rule may change before `make bench`
+exists (unit 5). Decision 7 sequences the ReDoS fix here deliberately, as a safety defect.
+
+Resolved by making the fix **provably detection-neutral**, so no unmeasured detection
+change lands before the baseline:
+- Differential test against the original pattern, kept in `tests/test_redos.py` as an
+  oracle: 39 cases plus 432 generated combinations, asserting identical acceptance *and*
+  identical reported column.
+- One-off differential over the five real projects: **1,039,776 lines across 3,777 files,
+  zero disagreements.**
+
+So the pattern is faster and decides nothing differently. The bench baseline in unit 5
+will therefore measure the same AG004 behaviour that existed before this commit.
+
+### The fix
+
+The pattern nested two unbounded `.*` spans inside a search, so the engine tried every
+split of the second for every split of the first at every start offset. Python 3.10 has
+neither atomic groups nor possessive quantifiers, so the nesting was removed by searching
+in two steps: find the assignment prefix, then search the interpolation alternatives from
+that match's end. Equivalent because the alternation could only ever match at or after
+the prefix.
+
+| Line length | Before | After |
+|---|---|---|
+| 1.8 KB | 12 ms | 0.22 ms |
+| 7.2 KB | 511 ms | 2.21 ms |
+| 14.4 KB | 3,964 ms | 8.32 ms |
+| 28.8 KB | **34,408 ms** | **32.28 ms** |
+
+**Honest caveat: this is not linear.** The curve is still ~4x per doubling — quadratic,
+from the one remaining `.*` inside `f['"][^\n]*\{SRC\}`. What makes it *safe* is the
+combination with the new engine-level bound, not the rewrite alone.
+
+### The engine-level guard
+
+`max_line_length` (default 4096) bounds the input handed to every line-oriented rule,
+present and future — the brief's "so the next bad pattern cannot hang the scanner either".
+Worst case is now bounded twice over: at most 1 MB per file / 4096 chars per line = 256
+full-length lines, at ~0.6 ms each ≈ 154 ms per file.
+
+Truncation is counted and reported (`truncated_lines`) in JSON, Markdown, and terminal
+output. A silent cap would let a bounded scan pass for a complete one, which is the same
+class of mistake as unit 1's exit code.
+
+Bench delta: n/a — `make bench` does not exist yet (unit 5). Detection is unchanged by
+construction, evidenced above.
+
+Decisions taken alone:
+1. **`max_line_length` added to `RepoConfig`** (lower-only), consistent with
+   `max_file_size_kb`. A repo tightening its own bound is safe by the same argument.
+2. **`truncated_lines` added to the JSON `scan` object.** Additive key, backward
+   compatible for any consumer reading known fields. Chosen over silence because the
+   brief forbids unreported coverage caps.
+3. **`SourceFile.lines` now computes once** instead of re-splitting on every access
+   (audit F8). Free while editing the file, and needed anyway to count truncation once.
+4. **Removed stale "vulnerable dependencies" claims** from `README.md` and
+   `docs/SECURITY_MODEL.md`. With AG009 gone the tool does not check advisories at all,
+   so those sentences were unmeasured claims of a capability that no longer exists.
+5. **`python_tree()` now also catches `ValueError`/`RecursionError`.** `ast.parse` raises
+   these on null bytes and deeply nested input respectively; both are reachable from a
+   hostile file and would otherwise surface as a rule crash. Conservative: strictly more
+   robust, no detection change.
+
+Next: unit 4 — CI matrix 3.10-3.13. Already present at `.github/workflows/ci.yml:17`;
+will verify rather than duplicate, then unit 5 (corpus + bench).

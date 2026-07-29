@@ -22,6 +22,7 @@ def to_json(result: ScanResult) -> str:
             "files_scanned": result.files_scanned,
             "rules_run": result.rules_run,
             "skipped_files": result.skipped_files,
+            "truncated_lines": result.truncated_lines,
             "duration_ms": round(result.duration_ms, 2),
             "counts": result.counts(),
             "errors": result.errors,
@@ -59,6 +60,16 @@ def to_markdown(result: ScanResult) -> str:
                 f"**Risk:** {finding.risk}",
                 "",
                 f"**Remediation:** {finding.remediation}",
+                "",
+            ]
+        )
+    if result.skipped_files or result.truncated_lines:
+        rows.extend(
+            [
+                "## Coverage bounds",
+                "",
+                f"- Files skipped by size limit: {result.skipped_files}",
+                f"- Lines truncated by length limit: {result.truncated_lines}",
                 "",
             ]
         )
@@ -177,6 +188,11 @@ def render_terminal(result: ScanResult, console: Console | None = None) -> None:
         f"[red]{counts['Critical']} critical[/red], [red]{counts['High']} high[/red], "
         f"[yellow]{counts['Medium']} medium[/yellow], [blue]{counts['Low']} low[/blue]"
     )
+    if result.skipped_files or result.truncated_lines:
+        output.print(
+            f"[dim]Bounded: {result.skipped_files} file(s) skipped by size, "
+            f"{result.truncated_lines} line(s) truncated by length.[/dim]"
+        )
     for error in result.errors:
         output.print(f"[yellow]Warning:[/yellow] {error}")
 

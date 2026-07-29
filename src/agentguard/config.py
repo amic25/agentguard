@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 
+from agentguard.context import DEFAULT_MAX_LINE_LENGTH
+
 DEFAULT_EXCLUDES = (
     ".git/**",
     ".venv/**",
@@ -40,7 +42,7 @@ DEFAULT_EXCLUDES = (
 #: Settings a scanned repository may supply. Every key here must have an unambiguous
 #: "safer" direction that :meth:`Config.tightened_by` can enforce. Adding a key widens
 #: the untrusted attack surface and requires the same justification.
-REPO_KEYS = frozenset({"exclude", "max_file_size_kb", "follow_symlinks"})
+REPO_KEYS = frozenset({"exclude", "max_file_size_kb", "max_line_length", "follow_symlinks"})
 
 #: Settings only an operator may supply, and the reason each is withheld. These are the
 #: settings a hostile repository would want: they weaken detection or execute code.
@@ -95,6 +97,7 @@ class RepoConfig:
 
     exclude: tuple[str, ...] = ()
     max_file_size_kb: int | None = None
+    max_line_length: int | None = None
     follow_symlinks: bool | None = None
 
     @classmethod
@@ -120,10 +123,12 @@ class RepoConfig:
         if unknown:
             raise ValueError(f"{path}: unknown keys: {', '.join(sorted(unknown))}")
         size = raw.get("max_file_size_kb")
+        line = raw.get("max_line_length")
         follow = raw.get("follow_symlinks")
         return cls(
             exclude=tuple(_strings(raw.get("exclude", []), "exclude")),
             max_file_size_kb=None if size is None else _positive_int(size, "max_file_size_kb"),
+            max_line_length=None if line is None else _positive_int(line, "max_line_length"),
             follow_symlinks=None if follow is None else _bool(follow, "follow_symlinks"),
         )
 
@@ -137,6 +142,7 @@ class Config:
     severity_overrides: dict[str, str] = field(default_factory=dict)
     plugin_modules: list[str] = field(default_factory=list)
     max_file_size_kb: int = 1024
+    max_line_length: int = DEFAULT_MAX_LINE_LENGTH
     follow_symlinks: bool = False
 
     @classmethod
@@ -166,6 +172,7 @@ class Config:
             raise ValueError("severity_overrides must be a mapping")
         defaults = cls()
         size = raw.get("max_file_size_kb")
+        line = raw.get("max_line_length")
         follow = raw.get("follow_symlinks")
         return cls(
             exclude=[*defaults.exclude, *_strings(raw.get("exclude", []), "exclude")],
@@ -174,6 +181,9 @@ class Config:
             plugin_modules=_strings(raw.get("plugins", []), "plugins"),
             max_file_size_kb=(
                 defaults.max_file_size_kb if size is None else _positive_int(size, "max_file_size_kb")
+            ),
+            max_line_length=(
+                defaults.max_line_length if line is None else _positive_int(line, "max_line_length")
             ),
             follow_symlinks=(
                 defaults.follow_symlinks if follow is None else _bool(follow, "follow_symlinks")
@@ -188,7 +198,8 @@ class Config:
         can therefore make its own scan stricter, slower, or narrower, but never laxer.
 
         - ``exclude`` is append-only, so operator exclusions cannot be removed.
-        - ``max_file_size_kb`` takes the minimum, so a resource bound cannot be raised.
+        - ``max_file_size_kb`` and ``max_line_length`` take the minimum, so a resource
+          bound cannot be raised.
         - ``follow_symlinks`` takes the conjunction, so a repository cannot make the
           scanner read through a symlink the operator did not already permit.
 
@@ -204,6 +215,11 @@ class Config:
                 self.max_file_size_kb
                 if repo.max_file_size_kb is None
                 else min(self.max_file_size_kb, repo.max_file_size_kb)
+            ),
+            max_line_length=(
+                self.max_line_length
+                if repo.max_line_length is None
+                else min(self.max_line_length, repo.max_line_length)
             ),
             follow_symlinks=(
                 self.follow_symlinks

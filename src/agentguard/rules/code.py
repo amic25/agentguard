@@ -107,16 +107,36 @@ class PromptInjectionRule(Rule):
         "Detects direct interpolation of external content into prompts.",
     )
     _sources = r"(?:request|req|input|user_input|user_message|web_content|document|page|result|tool_output|message\.content)"
-    _patterns = (
-        re.compile(
-            rf"(?i)(?:prompt|system_message|instructions?)\s*=.*(?:f['\"].*\{{{_sources}\}}|\.format\([^)]*{_sources}|\+\s*{_sources})"
-        ),
-        re.compile(rf"(?i)(?:content|prompt)\s*(?::|=)\s*`[^`]*\$\{{{_sources}\}}"),
+
+    # This was one pattern of the form `PREFIX \s*= .* (?: f['"] .* \{SRC\} | ... )`.
+    # Two unbounded `.*` spans nested inside a search meant the engine tried every split
+    # of the second for every split of the first, at every start offset: cubic. A 28 KB
+    # line took 34 seconds, and the file size cap allows 1 MB. Since a scanner runs on
+    # untrusted input, that is a denial-of-service vector, not a tuning problem.
+    #
+    # Python 3.10 has neither atomic groups nor possessive quantifiers, so the nesting is
+    # removed by searching in two steps instead of one. The alternation could only ever
+    # match at or after the end of the assignment prefix, so anchoring the second search
+    # to the first match's end accepts exactly the same set of lines - see
+    # tests/test_redos.py, which asserts that equivalence over a large input corpus.
+    _assignment = re.compile(r"(?i)(?:prompt|system_message|instructions?)\s*=")
+    _interpolations = (
+        re.compile(rf"(?i)f['\"][^\n]*\{{{_sources}\}}"),
+        re.compile(rf"(?i)\.format\([^)]*{_sources}"),
+        re.compile(rf"(?i)\+\s*{_sources}"),
     )
+    # Bounded by a negated class, so linear already; left as one pattern.
+    _template_literal = re.compile(rf"(?i)(?:content|prompt)\s*(?::|=)\s*`[^`]*\$\{{{_sources}\}}")
+
+    def _match(self, line: str) -> re.Match[str] | None:
+        assignment = self._assignment.search(line)
+        if assignment and any(p.search(line, assignment.end()) for p in self._interpolations):
+            return assignment
+        return self._template_literal.search(line)
 
     def scan(self, source: SourceFile) -> Iterable[Finding]:
         for number, line in enumerate(source.lines, 1):
-            match = next((pattern.search(line) for pattern in self._patterns if pattern.search(line)), None)
+            match = self._match(line)
             if match:
                 yield self.finding(
                     source,

@@ -72,6 +72,7 @@ class ScanResult:
     files_scanned: int
     rules_run: int
     skipped_files: int = 0
+    truncated_lines: int = 0
     errors: list[str] = field(default_factory=list)
     duration_ms: float = 0.0
 

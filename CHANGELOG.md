@@ -13,6 +13,11 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
   is the only route from it into an effective configuration.
 - `docs/RULE_IDS.md`: the rule identifier policy — never reuse a retired ID, never silently rename,
   alias on change — plus the permanent register of retired identifiers.
+- `max_line_length` (default 4096): an engine-level bound on the input handed to line-oriented
+  rules, so an ill-behaved pattern cannot be turned into a denial of service by a long line. Like
+  `max_file_size_kb`, a scanned repository may only lower it.
+- `truncated_lines` on `ScanResult` and in the JSON, Markdown, and terminal reports, so a bounded
+  scan is never silently mistaken for a complete one.
 
 ### Removed
 
@@ -29,6 +34,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Security
 
+- **AG004 was a denial-of-service vector.** Its pattern nested two unbounded `.*` spans, making it
+  cubic in line length: a 28 KB single line took 34 seconds, and the file-size cap permits 1 MB.
+  Since AgentGuard runs on untrusted input in CI, a repository could hang its own scan. The pattern
+  now searches in two steps and takes 32 ms on the same input (~1,066x faster), and the new
+  `max_line_length` bound caps the input to every regex rule, including ones not yet written.
+  Detection is unchanged: verified identical acceptance and column on 1,039,776 lines across 3,777
+  files of real agent code, plus a differential test kept in `tests/test_redos.py`.
 - **Scanning an untrusted repository could execute arbitrary code from that repository.** A
   `.agentguard.yml` in the scan target could name modules under `plugins:`, which were passed
   directly to `importlib.import_module`. Scanning a hostile repository — the tool's primary

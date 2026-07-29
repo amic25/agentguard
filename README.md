@@ -10,7 +10,7 @@
   [![License](https://img.shields.io/badge/license-Apache--2.0-2563eb)](LICENSE)
 </div>
 
-AgentGuard is an open-source static security scanner for AI agent applications. It looks for leaked secrets, prompt-injection paths, excessive permissions, unsafe system access, weak tool validation, risky outbound calls, missing human approval, and vulnerable dependencies in Python and JavaScript/TypeScript projects.
+AgentGuard is an open-source static security scanner for AI agent applications. It looks for leaked secrets, prompt-injection paths, excessive permissions, unsafe system access, weak tool validation, risky outbound calls, missing human approval, and unpinned dependencies in Python and JavaScript/TypeScript projects.
 
 It is offline-first, CI-friendly, framework-aware, and designed to produce findings a developer can fix—not a wall of vague warnings.
 
@@ -118,13 +118,14 @@ Create `.agentguard.yml`:
 exclude:
   - generated/**
 max_file_size_kb: 1024
+max_line_length: 4096
 follow_symlinks: false
 ```
 
 A config file discovered inside the repository being scanned is **untrusted input** — AgentGuard is
 built to run on code you have not read. Such a file may only make a scan stricter: exclusions are
-added to the defaults, `max_file_size_kb` may only be lowered, and `follow_symlinks` may only be
-turned off.
+added to the defaults, `max_file_size_kb` and `max_line_length` may only be lowered, and
+`follow_symlinks` may only be turned off.
 
 `plugins`, `disabled_rules`, and `severity_overrides` can execute code or weaken a scan, so they are
 rejected in a discovered config. To use them, vouch for the file explicitly — this is the operator
