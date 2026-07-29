@@ -1,4 +1,4 @@
-.PHONY: install format lint type test check build scan
+.PHONY: install format lint type test bench check build scan
 
 install:
 	python -m pip install -e '.[dev]'
@@ -17,7 +17,10 @@ type:
 test:
 	pytest
 
-check: lint type test
+bench:
+	python -m tools.bench
+
+check: lint type test bench
 
 build:
 	python -m build

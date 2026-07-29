@@ -230,3 +230,125 @@ Decisions taken alone:
 
 Next: unit 4 — CI matrix 3.10-3.13. Already present at `.github/workflows/ci.yml:17`;
 will verify rather than duplicate, then unit 5 (corpus + bench).
+
+---
+
+## Unit 4 — CI matrix 3.10–3.13 — 2026-07-29
+
+Status: complete (no change required)
+Changed: nothing
+
+The matrix already existed at `.github/workflows/ci.yml:17` before this session, so the
+gap was verification, not configuration. Ran the full suite on every supported version
+against current `HEAD`:
+
+```
+Python 3.10.20  → 112 passed, 1 skipped
+Python 3.11.15  → 112 passed, 1 skipped
+Python 3.12.13  → 112 passed, 1 skipped
+Python 3.13.14  → 112 passed, 1 skipped
+```
+(The skip is the git-hygiene check; the container has no git. It runs in CI.)
+
+This closes the "not verified on 3.10/3.11/3.13" caveat recorded in AUDIT.md §6.
+
+Bench delta: n/a
+Decisions taken alone: none — adding a matrix that already exists would have been
+duplicated configuration presented as work.
+Next: unit 5 — corpus and bench.
+
+---
+
+## Unit 5 — Phase 1 baseline: labeled corpus and `make bench` — 2026-07-29
+
+Status: complete
+Changed: `tests/corpus/` (23 files + `manifest.yml`), `tools/bench.py`, `Makefile`,
+`tests/test_corpus.py`, `pyproject.toml`, `.github/workflows/ci.yml`
+
+Verified:
+```
+ruff format --check src tests tools  → 27 files already formatted
+ruff check src tests tools           → All checks passed!
+mypy src                             → Success: no issues found in 14 source files
+pytest -q                            → 120 passed, 93.29% coverage
+python -m tools.bench                → table below
+```
+
+### BASELINE — measured before any rule change
+
+```
+| Rule  |  TP |  FP |  FN | Precision | Recall |
+|-------|----:|----:|----:|----------:|-------:|
+| AG001 |   1 |   3 |   0 |     25.0% | 100.0% |
+| AG002 |   2 |   2 |   0 |     50.0% | 100.0% |
+| AG003 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG004 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG005 |   1 |   2 |   0 |     33.3% | 100.0% |
+| AG006 |   1 |   0 |   0 |    100.0% | 100.0% |
+| AG007 |   1 |   2 |   0 |     33.3% | 100.0% |
+| AG008 |   1 |   1 |   0 |     50.0% | 100.0% |
+| AG010 |   1 |   0 |   0 |    100.0% | 100.0% |
+| **all** |  10 |  10 |   0 |     50.0% | 100.0% |
+```
+
+False positives, all reproducing defects measured against real projects in AUDIT.md:
+```
+AG001  true_negatives/secrets_in_docstrings.py:8
+AG001  true_negatives/secrets_in_test_fixtures.py:8
+AG001  true_negatives/token_annotations.py:12
+AG002  true_negatives/eval_on_literal.py:3
+AG002  true_negatives/method_named_exec.py:9
+AG005  true_negatives/dependabot.yml:5
+AG005  true_negatives/route_paths.py:10
+AG007  true_negatives/analytics_iife.js:3
+AG007  true_positives/agent_tools.ts:4
+AG008  true_negatives/function_definitions.py:7
+```
+
+Note AG003, AG004, AG006 and AG010 show 100% precision here while the real-project
+dogfood measured AG003 at 98.4% FP and AG006 at 100% FP. **The corpus is smaller than
+reality and currently flatters those three rules.** It is a regression harness, not a
+population sample, and the AUDIT.md dogfood remains the honest estimate of field
+behaviour. Extending the corpus for AG003/AG006 is follow-up work.
+
+### Harness design notes
+
+- `expect` is exhaustive: any finding whose rule is not listed counts as a false
+  positive. There is no "don't care", because a rule firing on a file nobody considered
+  is exactly the noise being measured.
+- `why` is mandatory and validated. A label without a reason cannot be distinguished
+  later from one that was rubber-stamped.
+- The manifest and the directory contents are cross-checked both ways; drift exits 2
+  rather than reporting numbers computed from a stale corpus.
+- Files that file discovery never opens are reported as **not-discovered** rather than
+  counted as clean negatives.
+
+### Two corpus bugs the harness caught on first run
+
+1. AG010 showed a false negative. The rule requires the filename to start with
+   `requirements`; the file was named `unpinned_requirements.txt`. Corpus bug, not a rule
+   bug — renamed.
+2. `.env.example` produced no finding **because AgentGuard never opens it**: `.example`
+   is not a recognised suffix. It was silently scoring as a clean negative while proving
+   nothing. This is also a real coverage gap — a genuine `.env` containing live
+   credentials would be missed entirely. Now surfaced by the harness and pinned by
+   `test_undiscovered_files_are_reported_not_silently_passed`.
+
+Both are recorded because a harness that quietly credits itself is worse than none.
+
+Bench delta: n/a — this **is** the baseline.
+
+Decisions taken alone:
+1. **`tests/corpus` excluded from ruff.** The files deliberately contain undefined names
+   and unsafe calls; formatting them would change what is being measured. mypy already
+   only reads `src`. pytest `norecursedirs` prevents collection.
+2. **`pythonpath = ["."]`** so `tests/test_corpus.py` can import the harness, and `tools`
+   added to the sdist so the benchmark is reproducible from a source distribution.
+3. **`make check` now includes `bench`**, and CI prints the table on every run, so a
+   precision change is visible in a log diff rather than needing to be remembered.
+4. **`test_corpus.py` asserts recall and corpus consistency, not precision.** Precision is
+   expected to move in unit 6; pinning it would mean editing the assertion in the same
+   commit that changes the behaviour, which defeats the check.
+
+Next: unit 6 — F2's four root causes, declaratively in the engine, then re-run bench and
+report per-rule deltas.
