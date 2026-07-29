@@ -83,8 +83,16 @@ def scan(
             threshold = Severity.parse(fail_on)
         except ValueError as exc:
             raise typer.BadParameter(str(exc), param_hint="--fail-on") from exc
-        if any(finding.severity >= threshold for finding in result.findings):
-            raise typer.Exit(code=1)
+    if not result.completed:
+        # Ranked above --fail-on: CI must be able to tell "found problems" (1) from
+        # "the tool did not finish, so absence of findings means nothing" (2).
+        error_console.print(
+            f"[bold red]Scan incomplete:[/bold red] {len(result.errors)} error(s); "
+            "results are not a clean bill of health."
+        )
+        raise typer.Exit(code=2)
+    if fail_on.lower() != "none" and any(finding.severity >= threshold for finding in result.findings):
+        raise typer.Exit(code=1)
 
 
 @app.command("rules")

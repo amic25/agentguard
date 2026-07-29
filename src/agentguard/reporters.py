@@ -131,7 +131,7 @@ def to_sarif(result: ScanResult) -> str:
                 "results": sarif_results,
                 "invocations": [
                     {
-                        "executionSuccessful": not result.errors,
+                        "executionSuccessful": result.completed,
                         "toolExecutionNotifications": [
                             {"message": {"text": error}, "level": "warning"} for error in result.errors
                         ],

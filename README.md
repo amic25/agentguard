@@ -87,7 +87,17 @@ agentguard init                  # create .agentguard.yml
 agentguard scan src --exclude generated/**
 ```
 
-Exit codes are stable for automation: `0` passed, `1` reached the configured severity threshold, and `2` means the scan could not complete.
+Exit codes are stable for automation:
+
+| Code | Meaning |
+|---|---|
+| `0` | Every enabled rule ran to completion over every in-scope file, and nothing reached the `--fail-on` threshold. |
+| `1` | The scan completed and found at least one finding at or above `--fail-on`. |
+| `2` | The scan did not complete — a rule raised, a file could not be read, or the invocation was invalid. **Findings are not a clean bill of health.** |
+
+`2` outranks `1`: automation must be able to tell "found problems" from "the tool broke". A scan
+that cannot examine a file never reports that file as clean. Files skipped by declared policy
+(`max_file_size_kb`) are counted in the report and do not affect the exit code.
 
 ### GitHub code scanning
 

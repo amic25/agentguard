@@ -75,6 +75,20 @@ class ScanResult:
     errors: list[str] = field(default_factory=list)
     duration_ms: float = 0.0
 
+    @property
+    def completed(self) -> bool:
+        """True when every enabled rule ran to completion over every in-scope file.
+
+        This is the scan-integrity invariant: a caller may only treat a result as
+        trustworthy when it holds. A rule that raised, or a file that could not be read,
+        means some code went unexamined, and an unexamined file is not a clean file.
+
+        Files skipped by declared policy (``max_file_size_kb``) are deliberate and
+        reported via :attr:`skipped_files`; they are not failures and do not clear
+        this flag.
+        """
+        return not self.errors
+
     def counts(self) -> dict[str, int]:
         return {
             severity.name.title(): sum(finding.severity == severity for finding in self.findings)
