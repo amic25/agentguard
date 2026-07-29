@@ -1,2 +1,5 @@
-requests
-langchain
+# Fictional package names on purpose: this fixture tests version-constraint shape, not
+# real packages. Naming real ones makes GitHub's dependency graph ingest the corpus as a
+# project manifest, which fails dependency review on every PR forever.
+acme-agent-sdk
+acme-prompt-tools

@@ -57,7 +57,11 @@ true_positives:
 
   requirements.txt:
     expect: [AG010]
-    why: Dependencies with no version constraint admit an unreviewed future release.
+    why: >-
+      Dependencies with no version constraint admit an unreviewed future release. Package
+      names are fictional: a fixture named requirements.txt is ingested by GitHub's
+      dependency graph as a real project manifest, so real names would fail dependency
+      review on every future advisory.
 
   agent_tools.ts:
     expect: [AG002]
@@ -152,4 +156,6 @@ true_negatives:
 
   requirements.txt:
     expect: []
-    why: Fully pinned dependencies are the state AG010 asks for.
+    why: >-
+      Fully pinned dependencies are the state AG010 asks for. Fictional package names, for
+      the same reason as the true_positives counterpart.

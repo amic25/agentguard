@@ -646,3 +646,35 @@ Decisions taken alone:
    alerts on the branch.
 
 Next: merge, then assess release.
+
+---
+
+## Unit 10 — corpus fixtures were being read as project dependencies — 2026-07-29
+
+Status: complete
+Changed: `tests/corpus/*/requirements.txt`, `tests/corpus/manifest.yml`
+
+Dependency review failed on the PR. The first failure was pre-existing (dependency graph
+disabled); after enabling it the error changed to a real one:
+
+```
+tests/corpus/true_negatives/requirements.txt » langchain@0.2.16
+  LangSmith SDK: prompt pull deserializes untrusted manifests (high severity)
+  GHSA-3644-q5cj-c5c7
+```
+
+That is a corpus fixture, not a project dependency. GitHub's dependency graph ingests any
+committed `requirements.txt` as a real manifest, so adding the corpus silently gave this
+repository two fake dependency manifests. Left alone it would fail dependency review on
+every future PR and generate Dependabot alerts against packages the project does not use.
+
+Fixed at the source rather than allowlisting the advisory: the fixtures now name fictional
+packages. AG010 tests version-constraint *shape*, so real names bought nothing and cost a
+permanently failing check. Allowlisting `GHSA-3644-q5cj-c5c7` would have suppressed a real
+advisory for any future genuine langchain dependency.
+
+Verified: bench unchanged at 100% precision / 100% recall, 145 tests pass.
+
+Decisions taken alone:
+1. **Fictional package names rather than an advisory allowlist or a version bump.** A
+   version bump would fail again at the next advisory; an allowlist would hide a real one.
