@@ -32,12 +32,16 @@ Measured against a labelled corpus in this repository. Reproduce it with `make b
 | **all** |  14 |   1 |   0 |     93.3% | 100.0% |
 ```
 
-**93.3% precision and 100% recall over 34 labelled files** — 13 true positives and 21 true
-negatives, each carrying a written reason for its label in `tests/corpus/manifest.yml`.
-That is the only accuracy figure this project publishes, because it is the only one it can
-reproduce.
+**93.3% precision and 100% recall over 34 labelled files** — 14 that must produce a
+finding and 20 that must not, each carrying a written reason for its label in
+`tests/corpus/manifest.yml`. That is the only accuracy figure this project publishes,
+because it is the only one it can reproduce.
 
-13 of the 21 true negatives reproduce a false positive observed on a real project; the other
+The table counts *findings*, not files: 14 true positives from the 14 positive files, and
+the single false positive is one finding on one negative file. They are one-to-one here
+because no corpus case expects more than one rule to fire.
+
+12 of the 20 negative cases reproduce a false positive observed on a real project; the other
 8 were composed to cover awkward cases — a credential in a docstring, `eval` on a literal,
 `subprocess` with a fixed argument vector, a `.env` full of shell interpolation. Every case
 declares which it is, and `make bench` scores the field-derived subset separately:

@@ -15,7 +15,7 @@ type:
 	mypy src
 
 test:
-	pytest
+	pytest --cov=agentguard --cov-report=term-missing --cov-fail-under=85
 
 bench:
 	python -m tools.bench

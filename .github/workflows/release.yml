@@ -8,7 +8,43 @@ permissions:
   contents: read
 
 jobs:
+  # Nothing left this machine before this job existed. `git tag` on a broken commit
+  # published a broken package, and a PyPI version can be yanked but never replaced - so
+  # the recovery from a bad release is a new version number and a permanent gap. The
+  # release proves itself here or not at all.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e '.[dev]'
+
+      # The tag is the only thing a human types in this pipeline, and the version is
+      # written in exactly one place. If they disagree, PyPI would receive a package
+      # declaring a version nobody tagged, permanently.
+      - name: Tag must match the declared version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared="$(python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          installed="$(python -c 'import importlib.metadata as m; print(m.version("agentguard-sast"))')"
+          echo "tag=$tag  pyproject=$declared  installed=$installed"
+          if [ "$tag" != "$declared" ] || [ "$tag" != "$installed" ]; then
+            echo "::error::tag '$tag' disagrees with pyproject ('$declared') / installed ('$installed')"
+            exit 1
+          fi
+
+      - run: ruff format --check src tests tools
+      - run: ruff check src tests tools
+      - run: mypy src
+      - run: pytest --cov=agentguard --cov-fail-under=85
+      - run: python -m tools.bench
+      - run: python -m tools.bench --field-only
+      - run: python -m tools.measure_linearity --check
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +53,9 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install build
       - run: python -m build
+      # Paired with download-artifact@v8 below. The majors are not parallel: v8 is the
+      # documented counterpart to upload-artifact@v7, per download-artifact's release
+      # notes ("v8 supports downloading artifacts uploaded with actions/upload-artifact@v7").
       - uses: actions/upload-artifact@v7
         with:
           name: distributions
@@ -31,7 +70,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: distributions
           path: dist/
@@ -43,7 +82,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: distributions
           path: dist/

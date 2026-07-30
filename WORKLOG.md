@@ -1281,3 +1281,326 @@ Decisions taken alone:
 1. **Field-only reports "behave as labelled" rather than leading with precision**, because
    precision over a subset selected from observed failures is skewed by construction.
 2. **Unit D closed without a commit**, the framing already being present and verified.
+
+---
+
+## Unit 16 — R1: artifact actions aligned to the documented pairing — 2026-07-29
+
+Status: complete
+Changed: `.github/workflows/release.yml`
+
+Verified from the actions' own release notes, not from the assumption that equal majors
+interoperate — and the majors are **not** parallel. `upload-artifact` is at v7,
+`download-artifact` at v8. `download-artifact`'s README states v8 "supports downloading
+artifacts uploaded with `actions/upload-artifact@v7`", so v8 is the counterpart to v7 and
+both download steps are now v8.
+
+### Correction to the finding's severity
+
+The mismatch was real. The stated failure mode — publish failing after the tag is already
+pushed — **would not have happened today**, and the reasoning matters for judging what else
+to trust:
+
+- `upload-artifact@v7`'s direct (unzipped) upload is **opt-in** via `archive: false`, and
+  the release job does not set it.
+- Direct upload supports a single file only and fails on a glob resolving to several.
+  `path: dist/` is a directory containing a wheel and an sdist, so the feature cannot apply.
+- So v7 produced a zipped artifact, which `download-artifact@v4` unzips correctly.
+
+The real costs of leaving it were different and less dramatic: `download-artifact@v4` runs
+on **Node 20, which GitHub is deprecating** on its runners (already emitting warnings in
+this repository's dependency-review logs), while the build side had moved to Node 24; and
+v8 defaults `digest-mismatch` to `error` rather than a warning, which is the behaviour a
+release pipeline wants — a corrupted download should stop a publish, not log about it.
+
+Recording this because the queue asked for verification rather than assumption, and
+verification changed the answer: right fix, different reason, lower urgency than stated.
+
+Bench delta: n/a — workflow only.
+Decisions taken alone: none.
+Next: R2 + R3, which share the `verify` job.
+
+---
+
+## Unit 17 — R2 + R3: the release proves itself, and the version has one home — 2026-07-29
+
+Status: complete
+Changed: `.github/workflows/release.yml`, `pyproject.toml`, `src/agentguard/__init__.py`,
+`tests/test_cli.py`
+
+### The version lived in two places, not one
+
+The finding named `pyproject.toml:7`. It was also hardcoded at
+`src/agentguard/__init__.py:7`, and **that** is the one that feeds `--version`, the JSON
+report's `tool.version`, and the SARIF driver version. Bumping only `pyproject.toml` would
+have published a package declaring `0.2.0` while every report it emitted claimed `0.1.0` —
+including SARIF uploaded into GitHub code scanning. Worse than the finding described, and
+only visible by grepping for the literal rather than reading the named line.
+
+### hatch-vcs versus a comparison check — chose the check, plus single-sourcing
+
+`hatch-vcs` was rejected, for two reasons. It adds a build-time dependency to a project
+whose pitch includes a three-package runtime tree, and it makes the version depend on git
+history being present at build time, which complicates building from an sdist. Neither is
+fatal; both are cost for a problem that a five-line check solves.
+
+But a comparison check alone would have left the duplication, and the duplication is the
+actual defect. So `__init__.py` now reads `importlib.metadata.version("agentguard-sast")`,
+making `pyproject.toml` the only place a version number is written, with a
+`PackageNotFoundError` fallback for a source tree with no install. `tests/test_cli.py`
+asserts the CLI output against the metadata rather than a literal — a hardcoded assertion
+there would be a third site to edit in lockstep, which is the drift it should catch, not
+cause.
+
+Version is now `0.2.0`.
+
+### The verify job
+
+`publish` reached PyPI without anything having run. There is now a `verify` job that
+`build` depends on, and it runs the full suite, both bench scopes, the linearity gate, lint,
+mypy, and the tag/version consistency check.
+
+Chain: `verify → build → publish → github-release`.
+
+Tag check exercised against agreeing and disagreeing inputs, because a gate that cannot
+fail is the failure mode this whole queue is about:
+
+```
+GITHUB_REF_NAME=v0.2.0  -> tag=0.2.0 pyproject=0.2.0 installed=0.2.0  pass
+GITHUB_REF_NAME=v0.2.1  -> tag=0.2.1 pyproject=0.2.0 installed=0.2.0  FAIL (blocks release)
+GITHUB_REF_NAME=v1.0.0  -> tag=1.0.0 pyproject=0.2.0 installed=0.2.0  FAIL (blocks release)
+```
+It compares the tag against both `pyproject.toml` and the installed metadata, so the
+single-sourcing cannot silently come undone either.
+
+Trusted publishing untouched: `id-token: write`, `environment: pypi`, and `--verify-tag`
+are as they were.
+
+Verified: lint, mypy, 197 passed + 1 xfail, bench 33 of 34.
+Bench delta: none.
+Decisions taken alone:
+1. **Comparison check over `hatch-vcs`**, reasoning above.
+2. **`__version__` derived from installed metadata**, which the finding did not ask for but
+   which is the underlying defect — a check that only compared the tag to `pyproject.toml`
+   would have passed while reports still said `0.1.0`.
+Next: R4, the sdist.
+
+---
+
+## Unit 18 — R4 to R7: packaging, ignores, coverage flags, py.typed — 2026-07-29
+
+Status: complete
+Changed: `pyproject.toml`, `tools/bench.py`, `.gitignore`, `Makefile`,
+`.github/workflows/ci.yml`, `.github/workflows/release.yml`, `src/agentguard/py.typed` (new)
+
+### R4 — sdist shipped 36 corpus entries; now zero
+
+Confirmed by building and listing rather than reading config:
+
+```
+before   sdist 88 entries, 36 corpus       wheel 20 entries, 0 corpus
+after    sdist 39 entries,  0 corpus       wheel 20 entries, 0 corpus
+```
+Checked for corpus paths, `.env` files, `requirements.txt`, and anything under `tests/`.
+Both artifacts: 0 suspect.
+
+**Chose full `/tests` exclusion over corpus-only, and the reason is not cosmetic.**
+Excluding only `/tests/corpus` leaves `tests/test_corpus.py` in the sdist, where it cannot
+pass — the manifest it loads is gone. A distribution packager running the bundled suite
+would see failures that are not defects, which is worse than shipping no suite at all. The
+suite is a `git clone` away, and the new `verify` job runs it from the repository, which is
+the only place it is meaningful.
+
+`tools/bench.py` now detects a missing corpus and says why, instead of emitting 34
+"labelled but missing from disk" errors to anyone who pip-installs the sdist and tries it.
+
+The pattern the finding names is worth restating, because this is its third instance:
+**any file whose shape implies a role — `.env`, `requirements.txt`, `package.json`,
+lockfiles, workflow YAML — will be interpreted by something, whatever directory it is in.**
+Previous two: GitHub's dependency graph indexing the corpus as a project manifest, and
+dependency review failing on an advisory against a fixture's fictional dependency.
+
+### R5 — root `.env` now ignored, corpus untouched
+
+Root-anchored, verified with `git check-ignore -v` rather than by reading the pattern:
+
+```
+IGNORED  .env                                   <- .gitignore:6:/.env
+IGNORED  .env.local                             <- .gitignore:7:/.env.*
+tracked  tests/corpus/true_positives/.env
+tracked  tests/corpus/true_negatives/.env.local
+tracked  tests/corpus/true_negatives/.env.example
+```
+
+### R6 — coverage flags out of `addopts`
+
+`addopts` is now `-ra --strict-markers`. The gate moved to `make test`, `ci.yml`, and the
+release `verify` job. Verified in all three directions:
+
+```
+pytest tests/test_rules.py            -> exit 0   (21 passed; was a coverage failure)
+pytest --cov-fail-under=85            -> exit 0   (93.44%)
+pytest --cov-fail-under=99            -> exit 1   ("Required test coverage of 99% not reached")
+```
+The last one matters: moving a gate is only safe if you can show it still bites.
+
+### R7 — `py.typed` added, and confirmed packaged
+
+Verified absent first, then added, then confirmed in both artifacts:
+`agentguard/py.typed` in the wheel, `src/agentguard/py.typed` in the sdist. Hatchling
+picks it up from the package directory with no config change.
+
+Verified: lint, mypy, 197 passed + 1 xfailed.
+Bench delta: none — packaging and configuration only.
+Decisions taken alone:
+1. **Full `/tests` exclusion**, reasoning above — a half-excluded suite is worse than none.
+2. **`tools/` kept in the sdist.** `measure_linearity` works standalone from it; `bench`
+   now fails with an explanation rather than a wall of missing-file errors.
+Next: pre-tag verification — `twine check`, the licence classifier, and a TestPyPI dry run.
+
+---
+
+## Unit 19 — licence metadata, corpus layout, README prose — 2026-07-29
+
+Status: complete
+Changed: `pyproject.toml`, `README.md`, `tests/corpus/` (one file moved),
+`tests/corpus/manifest.yml`, `tests/test_corpus.py`
+
+### Licence classifier — `twine check` did not warn, but the metadata was wrong anyway
+
+The dry run was clean on both artifacts, with no deprecation warning about
+`License :: OSI Approved :: Apache Software License`. So the stated trigger did not fire.
+
+What it did surface is worse than a warning, and only visible by reading the built metadata:
+`license = {file = "LICENSE"}` under Metadata-Version 2.4 put the **entire Apache licence
+text** into the `License:` field. That renders as a wall of text on the PyPI project page,
+which cannot be edited without another release.
+
+Switched to the PEP 639 form — `license = "Apache-2.0"` plus `license-files = ["LICENSE"]`
+— and dropped the classifier, which PEP 639 makes redundant:
+
+```
+before:  License: <full Apache 2.0 text>   + Classifier: License :: OSI Approved :: ...
+after:   License-Expression: Apache-2.0    + License-File: LICENSE
+```
+`twine check` passes both artifacts after the change. Done now precisely because this is
+page metadata that a release freezes.
+
+### The 14-versus-13 discrepancy was a layout inconsistency, not two findings in one file
+
+The hypothesis in the finding was that one file yields two findings. It does not — **no
+corpus case expects more than one rule.** The real cause: `publishable_keys.py` sat in
+`true_negatives/` while carrying `expect: [AG001]`, because its assertion is about severity
+(capped at Low) rather than silence. So 13 positive files produced 14 true positives.
+
+Fixed at the source rather than explained in prose: the file moved to `true_positives/`,
+where its expectation matches its directory. The corpus is now self-consistent —
+**14 positives that must fire, 20 negatives that must not, 14 TP findings from 14 files,
+one-to-one.** `test_directory_matches_expectation` keeps it that way.
+
+README prose now separates the two explicitly: "34 labelled files — 14 that must produce a
+finding and 20 that must not… The table counts *findings*, not files."
+
+Counts after the move: field-derived negatives 12 (was 13; `publishable_keys.py` is
+field-derived but is no longer a negative), written negatives 8. Field-only scope is still
+13 cases — 12 negatives plus that one positive — hence "12 of 13 behave as labelled".
+
+### Artifacts re-verified after every change
+
+```
+twine check                → PASSED (wheel + sdist)
+sdist corpus/tests entries → 0
+wheel corpus entries       → 0
+README table vs make bench → MATCH
+pytest                     → 198 passed, 1 xfailed
+linearity gate             → exit 0
+```
+
+Bench delta: none. 93.3% / 100%, 33 of 34, 12 of 13 field-only — unchanged by the move,
+which was a relabelling of where a case lives, not of what it asserts.
+Decisions taken alone:
+1. **PEP 639 licence form**, because the embedded-text rendering is a release-frozen defect
+   even though nothing warned about it.
+2. **Moved the file rather than documenting the discrepancy.** Prose explaining why a number
+   looks wrong is a worse fix than the number not looking wrong.
+
+---
+
+## Unit 20 — what could not be verified, and the package-name question — 2026-07-29
+
+Status: reported, no code change.
+
+### TestPyPI dry run — NOT DONE, no credential
+
+The queue asked for a publish to TestPyPI, a `pip install` from it, and a check that
+`--version` reports `0.2.0`. **I could not do the upload.** There is no `~/.pypirc`, no
+`TWINE_*` or `PYPI_*` environment variable, and TestPyPI needs either a token or a
+configured trusted publisher. Saying so rather than implying it happened.
+
+What I did instead exercises everything except the upload transport — installing each built
+artifact into a clean virtualenv:
+
+```
+from the SDIST   agentguard --version -> AgentGuard 0.2.0
+                 scan tool.version    -> 0.2.0
+                 scan findings        -> AG001 Critical, AG002 Critical  (incl. a .env)
+                 coverage key present -> True
+                 runtime deps         -> pyyaml, rich, typer (+ transitives only)
+from the WHEEL   agentguard --version -> AgentGuard 0.2.0
+                 scan exit            -> 0
+                 py.typed             -> present in site-packages
+```
+
+That covers R3 (version consistency end to end), R4 (an sdist without the corpus still
+builds, installs, and scans), and R7. It does **not** cover: PyPI's own metadata
+validation on receipt, the trusted-publishing OIDC exchange, or how the project page
+actually renders. Those need a real upload, and the first tag is the first time any of them
+is exercised.
+
+**Recommendation: run the TestPyPI leg yourself before tagging.** It is the only remaining
+unexercised path, and it is the one where a mistake is permanent. A TestPyPI trusted
+publisher for this repository plus a temporary workflow_dispatch on `release.yml` pointed at
+`https://test.pypi.org/legacy/` would do it.
+
+### Package name — both names are unclaimed
+
+Checked rather than assumed:
+
+```
+pypi.org/pypi/agentguard-sast/json   -> HTTP 404
+pypi.org/pypi/agentguard/json        -> HTTP 404
+test.pypi.org/pypi/agentguard-sast   -> HTTP 404
+```
+
+`agentguard` is **free right now**. That changes the shape of the problem: this is not
+"someone else holds the good name", it is "the name your own documentation types at a shell
+prompt is unclaimed, on a security tool".
+
+**Recommendation, for you to action — I have not registered anything.**
+
+1. **Claim `agentguard` on PyPI as a placeholder before tagging**, and keep publishing under
+   `agentguard-sast`. A placeholder is a real 0.0.0 release with a README saying "this name
+   is reserved; install `agentguard-sast`". It costs one upload and closes the typosquat
+   permanently. PyPI does not reserve names without a release, so intent is not enough.
+2. Or **publish under `agentguard` and retire `agentguard-sast`** before either has users.
+   Cleanest end state — the install name matches the command — and this is the last moment
+   it is free, since nothing is published. Cost: the repository, docs, and the
+   trusted-publishing configuration all reference `agentguard-sast`, and
+   `pyproject.toml`'s `name` feeds the `importlib.metadata` lookup added in unit 17.
+3. Or **do nothing** and accept that `pip install agentguard` may one day install something
+   this project did not write.
+
+I would take (1). It is reversible, cheap, and does not touch a working release pipeline on
+the eve of a first tag — whereas (2) is the better end state bought at the cost of changing
+the distribution name in the same change that first exercises the publish path. If you want
+(2), it should be its own PR, before the tag, not folded into this one.
+
+Either way this is a decision about a namespace you own, so it stays with you.
+
+### Not done, deliberately
+
+- No tag. Version is `0.2.0` in `pyproject.toml`; nothing is tagged.
+- Trusted publishing untouched.
+- The `[0.1.0] — NEVER PUBLISHED` annotation untouched.
+- PRs #12, #13, #14, #15 untouched. #14 adds a pattern to the unbounded AG001 and will be
+  gated by the linearity job on its own PR now that `--check` runs in CI.

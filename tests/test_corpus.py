@@ -80,3 +80,20 @@ def test_field_only_scoring_is_a_strict_subset() -> None:
     labels, origins = load_manifest()
     field_only = {p: e for p, e in labels.items() if origins[p] == "field"}
     assert 0 < len(field_only) < len(labels)
+
+
+def test_directory_matches_expectation() -> None:
+    """`true_positives/` expects findings; `true_negatives/` expects none.
+
+    One file used to sit in `true_negatives/` while expecting AG001 — its assertion was
+    about severity, not silence. That made the corpus report 14 true positives across 13
+    positive files, and the README prose then had to explain a number that only looked
+    wrong because the layout was inconsistent. The directory is the claim; keep it true.
+    """
+    import yaml
+
+    raw = yaml.safe_load((CORPUS / "manifest.yml").read_text(encoding="utf-8"))
+    misfiled = [
+        f"true_positives/{name}" for name, entry in raw["true_positives"].items() if not entry["expect"]
+    ] + [f"true_negatives/{name}" for name, entry in raw["true_negatives"].items() if entry["expect"]]
+    assert not misfiled, f"expectation contradicts the directory: {misfiled}"

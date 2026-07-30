@@ -1,6 +1,12 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+# Root-anchored on purpose. A bare `.env` would also ignore the corpus fixtures at
+# tests/corpus/**, which must stay tracked - they are the test data for .env scanning.
+/.env
+/.env.*
+!/.env.example
+
 .venv/
 .venv*/
 venv/

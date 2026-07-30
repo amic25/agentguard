@@ -105,6 +105,15 @@ true_positives:
       on its own, where no `tests/` path component is visible. The earlier name made this
       entry claim to pin the downgrade while never reaching it.
 
+  publishable_keys.py:
+    origin: field
+    expect: [AG001]
+    why: >-
+      Publishable keys must still be reported - the publishable and secret halves are easy
+      to confuse - but capped at Low, so this is a true positive whose *severity* is the
+      assertion. Pinned by tests/test_rule_context.py::test_publishable_key_is_capped_at_low.
+      Measured as Critical false positives in browser-use and langgraph.
+
 true_negatives:
   .env.local:
     origin: written
@@ -265,11 +274,3 @@ true_negatives:
       Deleting a temp file the code itself created is not a consequential side effect on
       user data, and the path is not agent-controlled. Measured in crewAI.
 
-  publishable_keys.py:
-    origin: field
-    expect: [AG001]
-    why: >-
-      Publishable keys must still be reported - the publishable and secret halves are easy
-      to confuse - but capped at Low, so this is a true positive whose *severity* is the
-      assertion. Pinned by tests/test_rule_context.py::test_publishable_key_is_capped_at_low.
-      Measured as Critical false positives in browser-use and langgraph.
