@@ -1672,3 +1672,78 @@ Decisions taken alone:
 2. **CHANGELOG sections consolidated** rather than left duplicated, since the file is
    about to be read by anyone evaluating a first release.
 Next: unit 2, the TestPyPI dry run.
+
+---
+
+## Unit 22 — TestPyPI dry run — 2026-07-30
+
+Status: complete (job added; **the run itself needs a publisher I cannot configure** — see
+the residual gap below)
+Changed: `.github/workflows/release.yml`
+
+`workflow_dispatch` now publishes to TestPyPI through the same trusted-publishing shape as
+production: `id-token: write`, a named environment, `pypa/gh-action-pypi-publish`, and the
+same `verify → build` gate. Only the `repository-url` and the environment differ.
+
+```
+job                needs     runs when
+verify             -         both triggers
+build              verify    both triggers
+publish-testpypi   build     workflow_dispatch only
+publish            build     push AND refs/tags/**
+github-release     publish   push AND refs/tags/**
+```
+
+### A hole found while writing it
+
+`workflow_dispatch` can be run against a **tag** ref, not only a branch. With production
+gated on `startsWith(github.ref, 'refs/tags/')` alone, a manual dispatch on a tag would
+have satisfied it and published to production PyPI — the one action in this pipeline that
+cannot be undone, reachable from a dropdown. Production now also requires
+`github.event_name == 'push'`. Evaluated across every combination:
+
+```
+event              ref                  TestPyPI   production
+push               refs/tags/v0.2.0     False      True
+workflow_dispatch  refs/heads/main      True       False
+workflow_dispatch  refs/tags/v0.2.0     True       False   <- the hole, now closed
+```
+
+There is deliberately **no input**选 selecting the publish target. A dry run that can be
+aimed at production by picking the wrong dropdown entry is a worse hazard than the one it
+removes.
+
+### Two adjustments the dry run forced
+
+- **The tag check had to be split.** On a dispatch, `GITHUB_REF_NAME` is a branch name, so
+  comparing it to a version would fail every dry run for the wrong reason. It is now two
+  steps: *declared vs installed* runs on both triggers (a disagreement is worth catching in
+  a rehearsal), and *tag vs declared* is guarded by `startsWith(github.ref, 'refs/tags/')`.
+- **`skip-existing: true` on the TestPyPI job only.** TestPyPI accepts a version once, so
+  the second rehearsal of `0.2.0` would otherwise fail on a conflict that says nothing
+  about the release. Deliberately not set on production, where a version conflict is a real
+  signal that something is wrong.
+
+### Residual gap — stated plainly
+
+**A green dry run validates the mechanism, not the production configuration.** TestPyPI
+holds its own trusted-publisher record, separate from PyPI's. A successful TestPyPI publish
+proves the workflow shape, the OIDC exchange, metadata acceptance, and page rendering — and
+proves *nothing* about whether the PyPI publisher for `agentguard` names the right owner,
+repository, workflow filename, and environment. That one is verifiable only by inspection,
+which is unit 23.
+
+**I have not run the dispatch.** It needs a TestPyPI project with a trusted publisher for
+this repository and a GitHub environment named `testpypi`, both of which are yours. Once
+they exist: Actions → Release → Run workflow, from any branch.
+
+After it runs, the page checks worth doing are: README rendering as Markdown rather than
+raw markup, `License-Expression: Apache-2.0` showing as a licence badge rather than the
+wall of text the pre-#19 metadata would have produced, and the four project URLs resolving.
+
+Bench delta: none — workflow only.
+Decisions taken alone:
+1. **No target input on the dispatch.** Rejected a `choice` input for production-vs-test:
+   the failure mode it introduces is worse than the flexibility it buys.
+2. **`skip-existing` on TestPyPI only**, reasoning above.
+Next: unit 23, documenting the settings CI cannot see.
