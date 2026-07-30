@@ -1319,3 +1319,68 @@ verification changed the answer: right fix, different reason, lower urgency than
 Bench delta: n/a — workflow only.
 Decisions taken alone: none.
 Next: R2 + R3, which share the `verify` job.
+
+---
+
+## Unit 17 — R2 + R3: the release proves itself, and the version has one home — 2026-07-29
+
+Status: complete
+Changed: `.github/workflows/release.yml`, `pyproject.toml`, `src/agentguard/__init__.py`,
+`tests/test_cli.py`
+
+### The version lived in two places, not one
+
+The finding named `pyproject.toml:7`. It was also hardcoded at
+`src/agentguard/__init__.py:7`, and **that** is the one that feeds `--version`, the JSON
+report's `tool.version`, and the SARIF driver version. Bumping only `pyproject.toml` would
+have published a package declaring `0.2.0` while every report it emitted claimed `0.1.0` —
+including SARIF uploaded into GitHub code scanning. Worse than the finding described, and
+only visible by grepping for the literal rather than reading the named line.
+
+### hatch-vcs versus a comparison check — chose the check, plus single-sourcing
+
+`hatch-vcs` was rejected, for two reasons. It adds a build-time dependency to a project
+whose pitch includes a three-package runtime tree, and it makes the version depend on git
+history being present at build time, which complicates building from an sdist. Neither is
+fatal; both are cost for a problem that a five-line check solves.
+
+But a comparison check alone would have left the duplication, and the duplication is the
+actual defect. So `__init__.py` now reads `importlib.metadata.version("agentguard-sast")`,
+making `pyproject.toml` the only place a version number is written, with a
+`PackageNotFoundError` fallback for a source tree with no install. `tests/test_cli.py`
+asserts the CLI output against the metadata rather than a literal — a hardcoded assertion
+there would be a third site to edit in lockstep, which is the drift it should catch, not
+cause.
+
+Version is now `0.2.0`.
+
+### The verify job
+
+`publish` reached PyPI without anything having run. There is now a `verify` job that
+`build` depends on, and it runs the full suite, both bench scopes, the linearity gate, lint,
+mypy, and the tag/version consistency check.
+
+Chain: `verify → build → publish → github-release`.
+
+Tag check exercised against agreeing and disagreeing inputs, because a gate that cannot
+fail is the failure mode this whole queue is about:
+
+```
+GITHUB_REF_NAME=v0.2.0  -> tag=0.2.0 pyproject=0.2.0 installed=0.2.0  pass
+GITHUB_REF_NAME=v0.2.1  -> tag=0.2.1 pyproject=0.2.0 installed=0.2.0  FAIL (blocks release)
+GITHUB_REF_NAME=v1.0.0  -> tag=1.0.0 pyproject=0.2.0 installed=0.2.0  FAIL (blocks release)
+```
+It compares the tag against both `pyproject.toml` and the installed metadata, so the
+single-sourcing cannot silently come undone either.
+
+Trusted publishing untouched: `id-token: write`, `environment: pypi`, and `--verify-tag`
+are as they were.
+
+Verified: lint, mypy, 197 passed + 1 xfail, bench 33 of 34.
+Bench delta: none.
+Decisions taken alone:
+1. **Comparison check over `hatch-vcs`**, reasoning above.
+2. **`__version__` derived from installed metadata**, which the finding did not ask for but
+   which is the underlying defect — a check that only compared the tag to `pyproject.toml`
+   would have passed while reports still said `0.1.0`.
+Next: R4, the sdist.

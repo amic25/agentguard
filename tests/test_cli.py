@@ -52,7 +52,14 @@ def test_invalid_format(project: Path) -> None:
     assert result.exit_code == 2
 
 
-def test_version() -> None:
+def test_version_matches_package_metadata() -> None:
+    """Asserted against the metadata rather than a literal.
+
+    A hardcoded version here would have to be edited in lockstep with `pyproject.toml`
+    and `__init__.py`, which is the drift this test should be catching, not causing.
+    """
+    from importlib.metadata import version
+
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.stdout
+    assert version("agentguard-sast") in result.stdout
