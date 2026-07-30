@@ -1523,3 +1523,84 @@ Decisions taken alone:
    even though nothing warned about it.
 2. **Moved the file rather than documenting the discrepancy.** Prose explaining why a number
    looks wrong is a worse fix than the number not looking wrong.
+
+---
+
+## Unit 20 — what could not be verified, and the package-name question — 2026-07-29
+
+Status: reported, no code change.
+
+### TestPyPI dry run — NOT DONE, no credential
+
+The queue asked for a publish to TestPyPI, a `pip install` from it, and a check that
+`--version` reports `0.2.0`. **I could not do the upload.** There is no `~/.pypirc`, no
+`TWINE_*` or `PYPI_*` environment variable, and TestPyPI needs either a token or a
+configured trusted publisher. Saying so rather than implying it happened.
+
+What I did instead exercises everything except the upload transport — installing each built
+artifact into a clean virtualenv:
+
+```
+from the SDIST   agentguard --version -> AgentGuard 0.2.0
+                 scan tool.version    -> 0.2.0
+                 scan findings        -> AG001 Critical, AG002 Critical  (incl. a .env)
+                 coverage key present -> True
+                 runtime deps         -> pyyaml, rich, typer (+ transitives only)
+from the WHEEL   agentguard --version -> AgentGuard 0.2.0
+                 scan exit            -> 0
+                 py.typed             -> present in site-packages
+```
+
+That covers R3 (version consistency end to end), R4 (an sdist without the corpus still
+builds, installs, and scans), and R7. It does **not** cover: PyPI's own metadata
+validation on receipt, the trusted-publishing OIDC exchange, or how the project page
+actually renders. Those need a real upload, and the first tag is the first time any of them
+is exercised.
+
+**Recommendation: run the TestPyPI leg yourself before tagging.** It is the only remaining
+unexercised path, and it is the one where a mistake is permanent. A TestPyPI trusted
+publisher for this repository plus a temporary workflow_dispatch on `release.yml` pointed at
+`https://test.pypi.org/legacy/` would do it.
+
+### Package name — both names are unclaimed
+
+Checked rather than assumed:
+
+```
+pypi.org/pypi/agentguard-sast/json   -> HTTP 404
+pypi.org/pypi/agentguard/json        -> HTTP 404
+test.pypi.org/pypi/agentguard-sast   -> HTTP 404
+```
+
+`agentguard` is **free right now**. That changes the shape of the problem: this is not
+"someone else holds the good name", it is "the name your own documentation types at a shell
+prompt is unclaimed, on a security tool".
+
+**Recommendation, for you to action — I have not registered anything.**
+
+1. **Claim `agentguard` on PyPI as a placeholder before tagging**, and keep publishing under
+   `agentguard-sast`. A placeholder is a real 0.0.0 release with a README saying "this name
+   is reserved; install `agentguard-sast`". It costs one upload and closes the typosquat
+   permanently. PyPI does not reserve names without a release, so intent is not enough.
+2. Or **publish under `agentguard` and retire `agentguard-sast`** before either has users.
+   Cleanest end state — the install name matches the command — and this is the last moment
+   it is free, since nothing is published. Cost: the repository, docs, and the
+   trusted-publishing configuration all reference `agentguard-sast`, and
+   `pyproject.toml`'s `name` feeds the `importlib.metadata` lookup added in unit 17.
+3. Or **do nothing** and accept that `pip install agentguard` may one day install something
+   this project did not write.
+
+I would take (1). It is reversible, cheap, and does not touch a working release pipeline on
+the eve of a first tag — whereas (2) is the better end state bought at the cost of changing
+the distribution name in the same change that first exercises the publish path. If you want
+(2), it should be its own PR, before the tag, not folded into this one.
+
+Either way this is a decision about a namespace you own, so it stays with you.
+
+### Not done, deliberately
+
+- No tag. Version is `0.2.0` in `pyproject.toml`; nothing is tagged.
+- Trusted publishing untouched.
+- The `[0.1.0] — NEVER PUBLISHED` annotation untouched.
+- PRs #12, #13, #14, #15 untouched. #14 adds a pattern to the unbounded AG001 and will be
+  gated by the linearity job on its own PR now that `--check` runs in CI.
