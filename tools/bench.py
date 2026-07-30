@@ -58,6 +58,17 @@ class Tally:
 
 def load_manifest() -> tuple[dict[Path, set[str]], dict[Path, str]]:
     """Return (expectations, origins). Both keyed by path."""
+    if not (CORPUS / "manifest.yml").exists():
+        # The published sdist omits `/tests` on purpose - the corpus trips secret scanners.
+        # Say so, rather than emitting 34 "labelled but missing from disk" errors.
+        print(
+            f"corpus not found at {CORPUS}.\n"
+            "The published sdist excludes tests/ deliberately: the corpus holds "
+            "credential-shaped fixtures that trip secret scanners.\n"
+            "Clone the repository to run the benchmark.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     raw = yaml.safe_load((CORPUS / "manifest.yml").read_text(encoding="utf-8"))
     labels: dict[Path, set[str]] = {}
     origins: dict[Path, str] = {}

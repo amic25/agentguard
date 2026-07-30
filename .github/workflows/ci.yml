@@ -28,7 +28,7 @@ jobs:
       - run: ruff format --check src tests tools
       - run: ruff check src tests tools
       - run: mypy src
-      - run: pytest --cov-report=xml
+      - run: pytest --cov=agentguard --cov-report=xml --cov-report=term-missing --cov-fail-under=85
       # Detection quality is a reviewable number, not a claim. Printed on every run so a
       # precision or recall change shows up in the diff of two CI logs.
       - run: python -m tools.bench

@@ -1384,3 +1384,76 @@ Decisions taken alone:
    which is the underlying defect — a check that only compared the tag to `pyproject.toml`
    would have passed while reports still said `0.1.0`.
 Next: R4, the sdist.
+
+---
+
+## Unit 18 — R4 to R7: packaging, ignores, coverage flags, py.typed — 2026-07-29
+
+Status: complete
+Changed: `pyproject.toml`, `tools/bench.py`, `.gitignore`, `Makefile`,
+`.github/workflows/ci.yml`, `.github/workflows/release.yml`, `src/agentguard/py.typed` (new)
+
+### R4 — sdist shipped 36 corpus entries; now zero
+
+Confirmed by building and listing rather than reading config:
+
+```
+before   sdist 88 entries, 36 corpus       wheel 20 entries, 0 corpus
+after    sdist 39 entries,  0 corpus       wheel 20 entries, 0 corpus
+```
+Checked for corpus paths, `.env` files, `requirements.txt`, and anything under `tests/`.
+Both artifacts: 0 suspect.
+
+**Chose full `/tests` exclusion over corpus-only, and the reason is not cosmetic.**
+Excluding only `/tests/corpus` leaves `tests/test_corpus.py` in the sdist, where it cannot
+pass — the manifest it loads is gone. A distribution packager running the bundled suite
+would see failures that are not defects, which is worse than shipping no suite at all. The
+suite is a `git clone` away, and the new `verify` job runs it from the repository, which is
+the only place it is meaningful.
+
+`tools/bench.py` now detects a missing corpus and says why, instead of emitting 34
+"labelled but missing from disk" errors to anyone who pip-installs the sdist and tries it.
+
+The pattern the finding names is worth restating, because this is its third instance:
+**any file whose shape implies a role — `.env`, `requirements.txt`, `package.json`,
+lockfiles, workflow YAML — will be interpreted by something, whatever directory it is in.**
+Previous two: GitHub's dependency graph indexing the corpus as a project manifest, and
+dependency review failing on an advisory against a fixture's fictional dependency.
+
+### R5 — root `.env` now ignored, corpus untouched
+
+Root-anchored, verified with `git check-ignore -v` rather than by reading the pattern:
+
+```
+IGNORED  .env                                   <- .gitignore:6:/.env
+IGNORED  .env.local                             <- .gitignore:7:/.env.*
+tracked  tests/corpus/true_positives/.env
+tracked  tests/corpus/true_negatives/.env.local
+tracked  tests/corpus/true_negatives/.env.example
+```
+
+### R6 — coverage flags out of `addopts`
+
+`addopts` is now `-ra --strict-markers`. The gate moved to `make test`, `ci.yml`, and the
+release `verify` job. Verified in all three directions:
+
+```
+pytest tests/test_rules.py            -> exit 0   (21 passed; was a coverage failure)
+pytest --cov-fail-under=85            -> exit 0   (93.44%)
+pytest --cov-fail-under=99            -> exit 1   ("Required test coverage of 99% not reached")
+```
+The last one matters: moving a gate is only safe if you can show it still bites.
+
+### R7 — `py.typed` added, and confirmed packaged
+
+Verified absent first, then added, then confirmed in both artifacts:
+`agentguard/py.typed` in the wheel, `src/agentguard/py.typed` in the sdist. Hatchling
+picks it up from the package directory with no config change.
+
+Verified: lint, mypy, 197 passed + 1 xfailed.
+Bench delta: none — packaging and configuration only.
+Decisions taken alone:
+1. **Full `/tests` exclusion**, reasoning above — a half-excluded suite is worse than none.
+2. **`tools/` kept in the sdist.** `measure_linearity` works standalone from it; `bench`
+   now fails with an explanation rather than a wall of missing-file errors.
+Next: pre-tag verification — `twine check`, the licence classifier, and a TestPyPI dry run.

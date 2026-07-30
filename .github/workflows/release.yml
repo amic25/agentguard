@@ -38,7 +38,7 @@ jobs:
       - run: ruff format --check src tests tools
       - run: ruff check src tests tools
       - run: mypy src
-      - run: pytest
+      - run: pytest --cov=agentguard --cov-fail-under=85
       - run: python -m tools.bench
       - run: python -m tools.bench --field-only
       - run: python -m tools.measure_linearity --check

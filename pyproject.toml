@@ -52,10 +52,25 @@ Changelog = "https://github.com/amic25/agentguard/blob/main/CHANGELOG.md"
 packages = ["src/agentguard"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/tools", "/docs", "/README.md", "/LICENSE", "/pyproject.toml", "/CHANGELOG.md"]
+# `/tests` is deliberately absent. The corpus holds credential-shaped strings, `.env`
+# files, two `requirements.txt` files, and fixtures using eval/exec/shell=True by design.
+# Shipping it means any organisation running a secret scanner over its package cache, or
+# mirroring sdists, gets hits on AgentGuard itself - and a security tool that trips
+# security scanners is quarantined at exactly the organisations worth adopting it. This is
+# the third external consumer to read the corpus as a real artifact, after GitHub's
+# dependency graph and dependency review.
+#
+# Excluding only `/tests/corpus` was rejected: it leaves a test suite in the sdist that
+# cannot pass, since `tests/test_corpus.py` requires the corpus. A packager running it
+# would see failures that are not defects. All-or-nothing is the honest shape; the suite is
+# a `git clone` away, and `verify` in the release workflow runs it from the repository.
+include = ["/src", "/tools", "/docs", "/README.md", "/LICENSE", "/pyproject.toml", "/CHANGELOG.md"]
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers --cov=agentguard --cov-report=term-missing --cov-fail-under=85"
+# Coverage flags deliberately absent. With them here, `pytest tests/test_rules.py` fails
+# on coverage even though every test passed - which is the first thing a contributor does.
+# The gate lives in `make test` and in CI, where it is measuring the whole suite.
+addopts = "-ra --strict-markers"
 testpaths = ["tests"]
 norecursedirs = ["tests/corpus"]
 pythonpath = ["."]
