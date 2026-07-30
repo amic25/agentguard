@@ -62,4 +62,4 @@ def test_version_matches_package_metadata() -> None:
 
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert version("agentguard-sast") in result.stdout
+    assert version("agentguard") in result.stdout

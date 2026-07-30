@@ -7,7 +7,7 @@
 I’m releasing AgentGuard, a Python CLI that scans Python and JS/TS agent code for leaked credentials, unsafe command/file access, broad tool permissions, prompt-injection paths, SSRF-style outbound calls, missing tool schemas, absent approval gates, and vulnerable dependencies.
 
 ```bash
-pipx install agentguard-sast
+pipx install agentguard
 agentguard scan .
 ```
 

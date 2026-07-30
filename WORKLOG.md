@@ -1604,3 +1604,71 @@ Either way this is a decision about a namespace you own, so it stays with you.
 - The `[0.1.0] — NEVER PUBLISHED` annotation untouched.
 - PRs #12, #13, #14, #15 untouched. #14 adds a pattern to the unbounded AG001 and will be
   gated by the linearity job on its own PR now that `--check` runs in CI.
+
+---
+
+## Unit 21 — distribution renamed to `agentguard` — 2026-07-30
+
+Status: complete
+Changed: `pyproject.toml`, `src/agentguard/__init__.py`, `tests/test_cli.py`,
+`.github/workflows/release.yml`, `README.md`, `docs/launch/REDDIT.md`, `CHANGELOG.md`
+
+### Nine sites, not six
+
+The brief listed six. Post-#19 there are **nine**, and the three additions are the ones
+that would have failed loudest:
+
+```
+pyproject.toml:6                     name
+src/agentguard/__init__.py:16        importlib.metadata lookup   <- added by #19
+tests/test_cli.py:65                 metadata assertion          <- added by #19
+.github/workflows/release.yml:31     tag/version check           <- added by #19
+.github/workflows/release.yml:69     PyPI environment URL
+README.md:12, 125, 128               install instructions
+docs/launch/REDDIT.md:10             install instruction
+```
+
+Renaming without the three from #19 would have left `__version__` falling back to
+`0.0.0+unknown`, so `--version`, the JSON `tool.version`, and the SARIF driver version
+would all have reported a version that does not exist — and the release `verify` job's tag
+check would have failed on a `PackageNotFoundError` after the tag was pushed. Precisely the
+class of failure #19 was written to prevent, reintroduced by a rename that looked textual.
+
+Seven references remain in `WORKLOG.md` and are deliberate: that file is the historical
+record, and the old name is part of it.
+
+### Verified after a clean reinstall
+
+A stale editable install would have masked a broken metadata lookup, so the old
+distribution was uninstalled first:
+
+```
+distribution          -> agentguard
+__version__           -> 0.2.0
+agentguard --version  -> AgentGuard 0.2.0
+version("agentguard-sast") -> PackageNotFoundError (correct: the old name is gone)
+built artifacts       -> agentguard-0.2.0.tar.gz, agentguard-0.2.0-py3-none-any.whl
+twine check           -> PASSED (both)
+wheel metadata        -> Name: agentguard, License-Expression: Apache-2.0
+wheel package dir     -> agentguard/  (import name unchanged, as expected)
+clean-venv install    -> pip show name: agentguard, --version: AgentGuard 0.2.0
+pytest                -> 198 passed, 1 xfailed
+bench                 -> 33 of 34 behave as labelled
+linearity gate        -> exit 0
+```
+
+### CHANGELOG had two `### Changed` and two `### Fixed` under `[Unreleased]`
+
+Not caused by this unit — accumulated across earlier commits, each appending its own
+section rather than merging into the existing one. Adding the rename note made it three,
+which is how it surfaced. Consolidated to one of each in Keep a Changelog order (Added,
+Changed, Fixed, Removed, Security); all four affected bullets verified still present, none
+dropped in the move.
+
+Bench delta: none — a distribution name change touches no rule.
+Decisions taken alone:
+1. **`WORKLOG.md` left untouched.** It records what was true at the time, and rewriting it
+   to say `agentguard` would make the earlier entries wrong.
+2. **CHANGELOG sections consolidated** rather than left duplicated, since the file is
+   about to be read by anyone evaluating a first release.
+Next: unit 2, the TestPyPI dry run.

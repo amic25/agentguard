@@ -13,6 +13,6 @@ try:
     #: `pyproject.toml` - is what `--version`, the JSON report's `tool.version`, and the
     #: SARIF driver version all report. Bumping one and not the other would have published
     #: a package declaring one version while every report it emitted claimed another.
-    __version__ = version("agentguard-sast")
+    __version__ = version("agentguard")
 except PackageNotFoundError:  # pragma: no cover - source tree with no install
     __version__ = "0.0.0+unknown"

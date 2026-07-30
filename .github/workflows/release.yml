@@ -28,7 +28,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME#v}"
           declared="$(python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          installed="$(python -c 'import importlib.metadata as m; print(m.version("agentguard-sast"))')"
+          installed="$(python -c 'import importlib.metadata as m; print(m.version("agentguard"))')"
           echo "tag=$tag  pyproject=$declared  installed=$installed"
           if [ "$tag" != "$declared" ] || [ "$tag" != "$installed" ]; then
             echo "::error::tag '$tag' disagrees with pyproject ('$declared') / installed ('$installed')"
@@ -66,7 +66,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agentguard-sast
+      url: https://pypi.org/p/agentguard
     permissions:
       id-token: write
     steps:

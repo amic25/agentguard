@@ -21,6 +21,20 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Changed
 
+- **The distribution is named `agentguard`, not `agentguard-sast`.** Renamed before first
+  publication, so no package under the old name has ever existed on PyPI — early git history
+  referencing `agentguard-sast` describes a name that was never published, not one that was
+  retired. The import package and the CLI entry point were already `agentguard` and are
+  unchanged; only the name you `pip install` is affected, and only for anyone who built from
+  source before this release.
+- **Exit code semantics.** A scan that does not complete now exits `2` where some cases previously
+  exited `0`. Automation that treated `0` as "clean" was previously being misled; it is now correct.
+  Files skipped by declared policy (`max_file_size_kb`) remain non-failing.
+- **Config schema.** `plugins`, `disabled_rules`, and `severity_overrides` are no longer accepted in
+  a `.agentguard.yml` discovered in the repository under scan; they now require an explicit
+  `--config`. Migration: pass `--config .agentguard.yml` to keep the previous behaviour for a
+  repository you own, or move those keys to an operator-supplied file. `agentguard init` now emits
+  the repository-safe subset.
 - **Rules declare their context; the engine enforces it.** `RuleMetadata` gained
   `languages` (required), `ignore_regions`, `require_nodes`, and `fixture_policy`. Language
   gating, comment/docstring/annotation awareness, node-kind gating, and test-fixture
@@ -35,6 +49,10 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Fixed
 
+- A rule that raised on every file, or a file that could not be decoded, previously produced exit
+  code `0` — indistinguishable from a clean scan, so CI reported green with zero coverage. The exit
+  code now honours the same invariant that SARIF `executionSuccessful` already reported. Exit `2`
+  outranks the `--fail-on` threshold.
 - `AG002` read any `.exec()` or `.eval()` method as the builtin, because call-name
   resolution returned the bare attribute when the receiver was not a plain name.
   `super().exec(*command)` was reported as critical arbitrary code execution.
@@ -82,24 +100,6 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
   exited 0. Repository-provided configuration is now a separate type with no `plugins` field, and it
   can only tighten a scan. The same fix closes repository control over `follow_symlinks`,
   `max_file_size_kb`, and `exclude`.
-
-### Fixed
-
-- A rule that raised on every file, or a file that could not be decoded, previously produced exit
-  code `0` — indistinguishable from a clean scan, so CI reported green with zero coverage. The exit
-  code now honours the same invariant that SARIF `executionSuccessful` already reported. Exit `2`
-  outranks the `--fail-on` threshold.
-
-### Changed
-
-- **Exit code semantics.** A scan that does not complete now exits `2` where some cases previously
-  exited `0`. Automation that treated `0` as "clean" was previously being misled; it is now correct.
-  Files skipped by declared policy (`max_file_size_kb`) remain non-failing.
-- **Config schema.** `plugins`, `disabled_rules`, and `severity_overrides` are no longer accepted in
-  a `.agentguard.yml` discovered in the repository under scan; they now require an explicit
-  `--config`. Migration: pass `--config .agentguard.yml` to keep the previous behaviour for a
-  repository you own, or move those keys to an operator-supplied file. `agentguard init` now emits
-  the repository-safe subset.
 
 ## [0.1.0] - 2026-07-16 — NEVER PUBLISHED
 
