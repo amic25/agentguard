@@ -1281,3 +1281,41 @@ Decisions taken alone:
 1. **Field-only reports "behave as labelled" rather than leading with precision**, because
    precision over a subset selected from observed failures is skewed by construction.
 2. **Unit D closed without a commit**, the framing already being present and verified.
+
+---
+
+## Unit 16 — R1: artifact actions aligned to the documented pairing — 2026-07-29
+
+Status: complete
+Changed: `.github/workflows/release.yml`
+
+Verified from the actions' own release notes, not from the assumption that equal majors
+interoperate — and the majors are **not** parallel. `upload-artifact` is at v7,
+`download-artifact` at v8. `download-artifact`'s README states v8 "supports downloading
+artifacts uploaded with `actions/upload-artifact@v7`", so v8 is the counterpart to v7 and
+both download steps are now v8.
+
+### Correction to the finding's severity
+
+The mismatch was real. The stated failure mode — publish failing after the tag is already
+pushed — **would not have happened today**, and the reasoning matters for judging what else
+to trust:
+
+- `upload-artifact@v7`'s direct (unzipped) upload is **opt-in** via `archive: false`, and
+  the release job does not set it.
+- Direct upload supports a single file only and fails on a glob resolving to several.
+  `path: dist/` is a directory containing a wheel and an sdist, so the feature cannot apply.
+- So v7 produced a zipped artifact, which `download-artifact@v4` unzips correctly.
+
+The real costs of leaving it were different and less dramatic: `download-artifact@v4` runs
+on **Node 20, which GitHub is deprecating** on its runners (already emitting warnings in
+this repository's dependency-review logs), while the build side had moved to Node 24; and
+v8 defaults `digest-mismatch` to `error` rather than a warning, which is the behaviour a
+release pipeline wants — a corrupted download should stop a publish, not log about it.
+
+Recording this because the queue asked for verification rather than assumption, and
+verification changed the answer: right fix, different reason, lower urgency than stated.
+
+Bench delta: n/a — workflow only.
+Decisions taken alone: none.
+Next: R2 + R3, which share the `verify` job.
