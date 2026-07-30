@@ -8,14 +8,14 @@ version = "0.2.0"
 description = "Static security scanner for AI agent applications"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{name = "AgentGuard contributors"}]
 keywords = ["ai", "agents", "security", "langchain", "mcp", "sast", "cli"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",

@@ -1457,3 +1457,69 @@ Decisions taken alone:
 2. **`tools/` kept in the sdist.** `measure_linearity` works standalone from it; `bench`
    now fails with an explanation rather than a wall of missing-file errors.
 Next: pre-tag verification — `twine check`, the licence classifier, and a TestPyPI dry run.
+
+---
+
+## Unit 19 — licence metadata, corpus layout, README prose — 2026-07-29
+
+Status: complete
+Changed: `pyproject.toml`, `README.md`, `tests/corpus/` (one file moved),
+`tests/corpus/manifest.yml`, `tests/test_corpus.py`
+
+### Licence classifier — `twine check` did not warn, but the metadata was wrong anyway
+
+The dry run was clean on both artifacts, with no deprecation warning about
+`License :: OSI Approved :: Apache Software License`. So the stated trigger did not fire.
+
+What it did surface is worse than a warning, and only visible by reading the built metadata:
+`license = {file = "LICENSE"}` under Metadata-Version 2.4 put the **entire Apache licence
+text** into the `License:` field. That renders as a wall of text on the PyPI project page,
+which cannot be edited without another release.
+
+Switched to the PEP 639 form — `license = "Apache-2.0"` plus `license-files = ["LICENSE"]`
+— and dropped the classifier, which PEP 639 makes redundant:
+
+```
+before:  License: <full Apache 2.0 text>   + Classifier: License :: OSI Approved :: ...
+after:   License-Expression: Apache-2.0    + License-File: LICENSE
+```
+`twine check` passes both artifacts after the change. Done now precisely because this is
+page metadata that a release freezes.
+
+### The 14-versus-13 discrepancy was a layout inconsistency, not two findings in one file
+
+The hypothesis in the finding was that one file yields two findings. It does not — **no
+corpus case expects more than one rule.** The real cause: `publishable_keys.py` sat in
+`true_negatives/` while carrying `expect: [AG001]`, because its assertion is about severity
+(capped at Low) rather than silence. So 13 positive files produced 14 true positives.
+
+Fixed at the source rather than explained in prose: the file moved to `true_positives/`,
+where its expectation matches its directory. The corpus is now self-consistent —
+**14 positives that must fire, 20 negatives that must not, 14 TP findings from 14 files,
+one-to-one.** `test_directory_matches_expectation` keeps it that way.
+
+README prose now separates the two explicitly: "34 labelled files — 14 that must produce a
+finding and 20 that must not… The table counts *findings*, not files."
+
+Counts after the move: field-derived negatives 12 (was 13; `publishable_keys.py` is
+field-derived but is no longer a negative), written negatives 8. Field-only scope is still
+13 cases — 12 negatives plus that one positive — hence "12 of 13 behave as labelled".
+
+### Artifacts re-verified after every change
+
+```
+twine check                → PASSED (wheel + sdist)
+sdist corpus/tests entries → 0
+wheel corpus entries       → 0
+README table vs make bench → MATCH
+pytest                     → 198 passed, 1 xfailed
+linearity gate             → exit 0
+```
+
+Bench delta: none. 93.3% / 100%, 33 of 34, 12 of 13 field-only — unchanged by the move,
+which was a relabelling of where a case lives, not of what it asserts.
+Decisions taken alone:
+1. **PEP 639 licence form**, because the embedded-text rendering is a release-frozen defect
+   even though nothing warned about it.
+2. **Moved the file rather than documenting the discrepancy.** Prose explaining why a number
+   looks wrong is a worse fix than the number not looking wrong.
