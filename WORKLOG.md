@@ -1747,3 +1747,72 @@ Decisions taken alone:
    the failure mode it introduces is worse than the flexibility it buys.
 2. **`skip-existing` on TestPyPI only**, reasoning above.
 Next: unit 23, documenting the settings CI cannot see.
+
+---
+
+## Unit 23 — settings outside version control, and corpus containment as a decision — 2026-07-30
+
+Status: complete
+Changed: `docs/GITHUB_SETUP.md`, `docs/DECISIONS.md`
+
+### Three live problems found while writing the checklist
+
+Checking each setting rather than describing it turned up three things wrong right now:
+
+1. **No GitHub environments exist.** `gh api .../environments` returns `[]`, while
+   `release.yml` references `pypi` and now `testpypi`. GitHub creates one implicitly on
+   first use, so a publish would still succeed — but with **no protection rules**, meaning
+   anyone able to push a tag can publish. And if the PyPI publisher record names an
+   environment, the names must match exactly or the OIDC exchange fails.
+2. **The About field still advertises "vulnerable dependencies".** AG009 was deleted in
+   #17; the repository page has claimed the capability ever since. Not fixed here — it is
+   a setting, and settings are yours — but it is the clearest possible demonstration of why
+   the checklist exists: nothing in CI renders that string, so nothing could fail.
+3. **`GITHUB_SETUP.md` was recommending the mistake.** Line 6 told the reader to require
+   the `test` and `package` checks. `test` is one of the three phantom contexts that
+   blocked every merge for two sessions. The document that onboards a maintainer was
+   teaching them to reproduce the incident. Corrected, with the reason attached.
+
+### What the checklist covers
+
+Six surfaces, each with what depends on it, a verify command, and whether the breakage is
+recoverable: PyPI trusted publisher (**unrecoverable** — fails after the tag is spent),
+the `pypi`/`testpypi` environments, branch-ruleset required contexts, About and topics,
+dependency graph and Dependabot alerts, and the social preview upload.
+
+Live state recorded at the time of writing:
+```
+environments           []                              <- neither exists
+required contexts      ["CodeQL","build","ci-ok"]      <- all real check-run names
+vulnerability-alerts   204 No Content                  <- enabled
+About                  "...vulnerable dependencies..." <- stale, AG009 is gone
+```
+
+Plus a five-item pre-tag sequence, ordered so the one unrecoverable item is checked last
+and checked twice.
+
+### Two `DECISIONS.md` entries
+
+**"A CI-verifiable repository still has a configuration surface CI cannot see."** The
+honest framing is that an inspection checklist is a weak control — manual, staleable, only
+run by someone who remembers. It is there because the alternative is nothing. Four
+incidents, and the shape is identical every time: *the repository is green, and the thing
+that is wrong is not in the repository*. The entry also records the one real mitigation —
+pulling settings into version control where possible, which is what `ci-ok` does by
+converting a branch-protection problem into a workflow problem.
+
+**"Corpus containment is per-consumer, because no single boundary holds."** Four readers,
+no two sharing a mechanism, and the directory irrelevant to all four — `tests/corpus/` is a
+convention this project observes and nothing else does. The standing rule is stated: any
+file whose shape implies a role will be interpreted by something regardless of location,
+and new corpus files of those shapes get checked against the reader list before landing.
+Both existing mitigations are noted as non-generalising.
+
+Verified: 198 passed + 1 xfailed, lint, mypy, bench 33 of 34.
+Bench delta: none — documentation only.
+Decisions taken alone:
+1. **Did not change the About field.** It is a setting and settings are yours; flagged
+   instead, with the corrected wording supplied in `GITHUB_SETUP.md` so it can be pasted.
+2. **Corrected the stale branch-protection recommendation** rather than only documenting
+   the general rule — a document actively recommending a known failure is worse than one
+   that is silent.

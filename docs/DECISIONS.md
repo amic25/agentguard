@@ -236,3 +236,73 @@ bias: the same reader labelled them twice and disagreed with himself on 5 of 20,
 five moving the same direction. A number that cannot be re-derived and whose labels are
 disputed is a marketing claim. The dataset ships with its method and its bias so the labels
 can be argued with, which is worth more than the headline.
+
+---
+
+## A CI-verifiable repository still has a configuration surface CI cannot see
+
+Everything in this project is designed to be checked by a command: rules declare their
+context and a schema enforces it, the linearity gate discovers unbounded patterns by
+introspection, `make bench` reproduces every published number, and the release proves
+itself before publishing. That discipline stops at the repository boundary.
+
+**Cost:** an inspection checklist is the weakest kind of control. It is manual, it goes
+stale, and it is only run by someone who remembers to run it.
+
+**Why anyway:** because the alternative is nothing. Four incidents so far, and in every one
+the repository looked healthy:
+
+| Setting | What happened |
+|---|---|
+| Required contexts `test`, `pytest`, `CI` | Every PR sat at `BLOCKED` with all checks green. Three names that no job produces, typed by hand. |
+| Dependency graph disabled | `dependency-review.yml` failed on every PR with an error naming a feature, not a defect. |
+| About description | Advertised "vulnerable dependencies" for the whole life of the branch that deleted AG009. No signal at all — nothing renders it in CI. |
+| PyPI trusted publisher | Not yet triggered. Would fail the OIDC exchange **after** the tag is pushed, spending the version. |
+
+The shape is consistent: **the repository is green, and the thing that is wrong is not in
+the repository.** No test can fail, because there is nothing to run.
+
+Two things follow. First, `docs/GITHUB_SETUP.md` carries a checklist naming every such
+surface, what depends on it, how to verify it, and whether the breakage is recoverable —
+the trusted publisher is marked unrecoverable, because it fails after the tag is spent.
+Second, anything that *can* be pulled into version control should be: `ci-ok` exists so a
+matrix can change without editing branch protection, which converts a settings problem into
+a workflow problem, where CI can see it.
+
+---
+
+## Corpus containment is per-consumer, because no single boundary holds
+
+A security scanner's test corpus is, by construction, indistinguishable from a vulnerable
+codebase. It has to be: a corpus that does not look dangerous does not test anything.
+
+**Cost:** containment cannot be solved once. Each new consumer of the repository reads the
+corpus in its own way and needs its own exclusion, and the list only grows.
+
+**Why anyway:** because every attempt to draw one boundary has failed. Four readers so far,
+each needing a different mechanism:
+
+| Reader | Read the corpus as | Fix |
+|---|---|---|
+| GitHub dependency graph | project dependency manifests | fictional package names in fixture `requirements.txt` |
+| GitHub dependency review | a real advisory against a real dependency | same fix; the advisory was genuine, the dependency was not |
+| sdist consumers, package-cache secret scanners | committed credentials | `/tests` excluded from the sdist |
+| Ruff | project source with undefined names and unsafe calls | `extend-exclude` in `pyproject.toml` |
+
+Note that no two share a mechanism, and that the directory the files live in was irrelevant
+to all four. `tests/corpus/` is a convention this project observes and nothing else does.
+
+### The standing rule
+
+**Any file whose *shape* implies a role — `.env`, `requirements.txt`, `package.json`,
+lockfiles, anything under `.github/` — will be interpreted by something, regardless of the
+directory it sits in.**
+
+Before adding a corpus file of one of those shapes, check it against the current reader
+list above. The check is cheap and the failures are not: the dependency-review incident
+surfaced as a genuine high-severity advisory on a pull request, and reading it as a real
+finding rather than a corpus artifact would have been entirely reasonable.
+
+Two mitigations are already in place and worth keeping: fixture manifests name fictional
+packages and say why in a header comment, and the sdist ships no tests at all. Neither
+generalises to the next reader.
