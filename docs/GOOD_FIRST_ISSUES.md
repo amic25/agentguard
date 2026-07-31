@@ -21,8 +21,3 @@ Create a dependency-free plain reporter for CI logs that disable color. Preserve
 
 **Labels:** `good first issue`, `documentation`  
 Add a tested GitLab CI example under `docs/integrations/`. Explain exit thresholds and artifact retention without claiming native features AgentGuard does not provide.
-
-## Recognize `.mts` and `.cts`
-
-**Labels:** `good first issue`, `javascript`, `scanner`  
-Treat modern TypeScript module extensions as TypeScript sources. Add discovery tests and update the supported file list.

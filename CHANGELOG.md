@@ -116,6 +116,9 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Terminal, JSON, Markdown, and SARIF 2.1.0 reporting.
 - Configurable severity thresholds, rule suppression, severity overrides, and module/entry-point plugins.
 - Docker image, typed Python package, tests, CI, CodeQL, dependency review, release workflow, and open-source governance files.
+- `.mts`/`.cts` source discovery: these now map to the `typescript` language, so existing
+  TypeScript-aware rules (AG002, AG004, AG006, AG007, etc.) run against them with no
+  rule-level changes.
 
 [Unreleased]: https://github.com/amic25/agentguard/commits/main
 [0.1.0]: # (never published - no tag exists)

@@ -77,6 +77,17 @@ true_positives:
     expect: [AG002]
     why: execSync on a caller-supplied command in TypeScript.
 
+  agent_prompt.mts:
+    origin: written
+    expect: [AG004]
+    why: >-
+      web_content interpolated into a template-literal prompt in a `.mts` (ESM TypeScript)
+      module. `.mts`/`.cts` map to the `typescript` language in LANGUAGES, and every
+      TypeScript-aware rule must declare `typescript` in RuleMetadata.languages to see
+      these files at all - this pins that AG004 specifically stays wired up, not just
+      AG002 (already covered by agent_tools.ts), so a rule that forgets to list
+      `typescript` fails the benchmark instead of silently skipping .mts/.cts files.
+
   .env:
     origin: written
     expect: [AG001]

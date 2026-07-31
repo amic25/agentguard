@@ -23,6 +23,8 @@ LANGUAGES = {
     ".cjs": "javascript",
     ".ts": "typescript",
     ".tsx": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
     ".json": "manifest",
     ".txt": "manifest",
     ".toml": "manifest",
