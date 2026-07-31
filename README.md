@@ -187,6 +187,12 @@ that cannot examine a file never reports that file as clean. Files skipped by de
     sarif_file: agentguard.sarif
 ```
 
+### CI integrations
+
+See the tested [GitLab CI example](docs/integrations/gitlab-ci.md) for severity
+thresholds, machine-readable reports, artifact retention, and current
+limitations.
+
 ### Configure and suppress
 
 Create `.agentguard.yml`:
