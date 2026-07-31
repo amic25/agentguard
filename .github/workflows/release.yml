@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dispatch publishes to TestPyPI only. There is deliberately no input selecting the
+  # target: a dry run that can be pointed at production PyPI by choosing the wrong
+  # dropdown entry is a worse hazard than the one it exists to remove.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,14 +28,28 @@ jobs:
       # The tag is the only thing a human types in this pipeline, and the version is
       # written in exactly one place. If they disagree, PyPI would receive a package
       # declaring a version nobody tagged, permanently.
+      # Runs on both triggers: the declared and installed versions must agree whether or
+      # not a tag is involved, and a dry run is the cheapest place to catch a disagreement.
+      - name: Declared and installed versions must agree
+        run: |
+          declared="$(python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          installed="$(python -c 'import importlib.metadata as m; print(m.version("agentguard"))')"
+          echo "pyproject=$declared  installed=$installed"
+          if [ "$declared" != "$installed" ]; then
+            echo "::error::pyproject declares '$declared' but the installed distribution is '$installed'"
+            exit 1
+          fi
+
+      # Tag-only: on a workflow_dispatch, GITHUB_REF_NAME is a branch name, and comparing a
+      # branch to a version would fail every dry run for the wrong reason.
       - name: Tag must match the declared version
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           tag="${GITHUB_REF_NAME#v}"
           declared="$(python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
-          installed="$(python -c 'import importlib.metadata as m; print(m.version("agentguard-sast"))')"
-          echo "tag=$tag  pyproject=$declared  installed=$installed"
-          if [ "$tag" != "$declared" ] || [ "$tag" != "$installed" ]; then
-            echo "::error::tag '$tag' disagrees with pyproject ('$declared') / installed ('$installed')"
+          echo "tag=$tag  pyproject=$declared"
+          if [ "$tag" != "$declared" ]; then
+            echo "::error::tag '$tag' disagrees with pyproject ('$declared')"
             exit 1
           fi
 
@@ -61,12 +79,43 @@ jobs:
           name: distributions
           path: dist/
 
+  # Rehearsal. Exercises what a local install cannot: PyPI's metadata validation on
+  # receipt, the OIDC token exchange, and how the project page renders. It validates the
+  # *mechanism*; TestPyPI has its own trusted-publisher configuration, so a green run here
+  # says nothing about whether the production publisher is configured correctly.
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/agentguard
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # A version can only be uploaded once. Without this, the second rehearsal of any
+          # given version fails on a conflict that says nothing about the release. Set here
+          # and deliberately not on the production job, where a conflict is a real signal.
+          skip-existing: true
+
   publish:
     needs: build
+    # Both halves are load-bearing. A workflow_dispatch can be run against a *tag* ref, so
+    # a tag-only condition would let a manual dispatch reach production PyPI - which is the
+    # one action in this pipeline that cannot be undone. Requiring the push event as well
+    # means production is reachable only by pushing a tag.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/agentguard-sast
+      url: https://pypi.org/p/agentguard
     permissions:
       id-token: write
     steps:
@@ -78,6 +127,7 @@ jobs:
 
   github-release:
     needs: publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

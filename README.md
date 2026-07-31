@@ -9,7 +9,7 @@ Offline. Never executes the code it scans. Designed to be run on repositories yo
 not read.
 
 ```bash
-pipx install agentguard-sast
+pipx install agentguard
 agentguard scan ./project
 ```
 
@@ -122,10 +122,10 @@ AgentGuard requires Python 3.10 or newer.
 
 ```bash
 # Isolated CLI installation (recommended)
-pipx install agentguard-sast
+pipx install agentguard
 
 # Or with pip
-python -m pip install agentguard-sast
+python -m pip install agentguard
 
 # From source
 git clone https://github.com/amic25/agentguard.git

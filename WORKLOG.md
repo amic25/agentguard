@@ -1604,3 +1604,215 @@ Either way this is a decision about a namespace you own, so it stays with you.
 - The `[0.1.0] — NEVER PUBLISHED` annotation untouched.
 - PRs #12, #13, #14, #15 untouched. #14 adds a pattern to the unbounded AG001 and will be
   gated by the linearity job on its own PR now that `--check` runs in CI.
+
+---
+
+## Unit 21 — distribution renamed to `agentguard` — 2026-07-30
+
+Status: complete
+Changed: `pyproject.toml`, `src/agentguard/__init__.py`, `tests/test_cli.py`,
+`.github/workflows/release.yml`, `README.md`, `docs/launch/REDDIT.md`, `CHANGELOG.md`
+
+### Nine sites, not six
+
+The brief listed six. Post-#19 there are **nine**, and the three additions are the ones
+that would have failed loudest:
+
+```
+pyproject.toml:6                     name
+src/agentguard/__init__.py:16        importlib.metadata lookup   <- added by #19
+tests/test_cli.py:65                 metadata assertion          <- added by #19
+.github/workflows/release.yml:31     tag/version check           <- added by #19
+.github/workflows/release.yml:69     PyPI environment URL
+README.md:12, 125, 128               install instructions
+docs/launch/REDDIT.md:10             install instruction
+```
+
+Renaming without the three from #19 would have left `__version__` falling back to
+`0.0.0+unknown`, so `--version`, the JSON `tool.version`, and the SARIF driver version
+would all have reported a version that does not exist — and the release `verify` job's tag
+check would have failed on a `PackageNotFoundError` after the tag was pushed. Precisely the
+class of failure #19 was written to prevent, reintroduced by a rename that looked textual.
+
+Seven references remain in `WORKLOG.md` and are deliberate: that file is the historical
+record, and the old name is part of it.
+
+### Verified after a clean reinstall
+
+A stale editable install would have masked a broken metadata lookup, so the old
+distribution was uninstalled first:
+
+```
+distribution          -> agentguard
+__version__           -> 0.2.0
+agentguard --version  -> AgentGuard 0.2.0
+version("agentguard-sast") -> PackageNotFoundError (correct: the old name is gone)
+built artifacts       -> agentguard-0.2.0.tar.gz, agentguard-0.2.0-py3-none-any.whl
+twine check           -> PASSED (both)
+wheel metadata        -> Name: agentguard, License-Expression: Apache-2.0
+wheel package dir     -> agentguard/  (import name unchanged, as expected)
+clean-venv install    -> pip show name: agentguard, --version: AgentGuard 0.2.0
+pytest                -> 198 passed, 1 xfailed
+bench                 -> 33 of 34 behave as labelled
+linearity gate        -> exit 0
+```
+
+### CHANGELOG had two `### Changed` and two `### Fixed` under `[Unreleased]`
+
+Not caused by this unit — accumulated across earlier commits, each appending its own
+section rather than merging into the existing one. Adding the rename note made it three,
+which is how it surfaced. Consolidated to one of each in Keep a Changelog order (Added,
+Changed, Fixed, Removed, Security); all four affected bullets verified still present, none
+dropped in the move.
+
+Bench delta: none — a distribution name change touches no rule.
+Decisions taken alone:
+1. **`WORKLOG.md` left untouched.** It records what was true at the time, and rewriting it
+   to say `agentguard` would make the earlier entries wrong.
+2. **CHANGELOG sections consolidated** rather than left duplicated, since the file is
+   about to be read by anyone evaluating a first release.
+Next: unit 2, the TestPyPI dry run.
+
+---
+
+## Unit 22 — TestPyPI dry run — 2026-07-30
+
+Status: complete (job added; **the run itself needs a publisher I cannot configure** — see
+the residual gap below)
+Changed: `.github/workflows/release.yml`
+
+`workflow_dispatch` now publishes to TestPyPI through the same trusted-publishing shape as
+production: `id-token: write`, a named environment, `pypa/gh-action-pypi-publish`, and the
+same `verify → build` gate. Only the `repository-url` and the environment differ.
+
+```
+job                needs     runs when
+verify             -         both triggers
+build              verify    both triggers
+publish-testpypi   build     workflow_dispatch only
+publish            build     push AND refs/tags/**
+github-release     publish   push AND refs/tags/**
+```
+
+### A hole found while writing it
+
+`workflow_dispatch` can be run against a **tag** ref, not only a branch. With production
+gated on `startsWith(github.ref, 'refs/tags/')` alone, a manual dispatch on a tag would
+have satisfied it and published to production PyPI — the one action in this pipeline that
+cannot be undone, reachable from a dropdown. Production now also requires
+`github.event_name == 'push'`. Evaluated across every combination:
+
+```
+event              ref                  TestPyPI   production
+push               refs/tags/v0.2.0     False      True
+workflow_dispatch  refs/heads/main      True       False
+workflow_dispatch  refs/tags/v0.2.0     True       False   <- the hole, now closed
+```
+
+There is deliberately **no input**选 selecting the publish target. A dry run that can be
+aimed at production by picking the wrong dropdown entry is a worse hazard than the one it
+removes.
+
+### Two adjustments the dry run forced
+
+- **The tag check had to be split.** On a dispatch, `GITHUB_REF_NAME` is a branch name, so
+  comparing it to a version would fail every dry run for the wrong reason. It is now two
+  steps: *declared vs installed* runs on both triggers (a disagreement is worth catching in
+  a rehearsal), and *tag vs declared* is guarded by `startsWith(github.ref, 'refs/tags/')`.
+- **`skip-existing: true` on the TestPyPI job only.** TestPyPI accepts a version once, so
+  the second rehearsal of `0.2.0` would otherwise fail on a conflict that says nothing
+  about the release. Deliberately not set on production, where a version conflict is a real
+  signal that something is wrong.
+
+### Residual gap — stated plainly
+
+**A green dry run validates the mechanism, not the production configuration.** TestPyPI
+holds its own trusted-publisher record, separate from PyPI's. A successful TestPyPI publish
+proves the workflow shape, the OIDC exchange, metadata acceptance, and page rendering — and
+proves *nothing* about whether the PyPI publisher for `agentguard` names the right owner,
+repository, workflow filename, and environment. That one is verifiable only by inspection,
+which is unit 23.
+
+**I have not run the dispatch.** It needs a TestPyPI project with a trusted publisher for
+this repository and a GitHub environment named `testpypi`, both of which are yours. Once
+they exist: Actions → Release → Run workflow, from any branch.
+
+After it runs, the page checks worth doing are: README rendering as Markdown rather than
+raw markup, `License-Expression: Apache-2.0` showing as a licence badge rather than the
+wall of text the pre-#19 metadata would have produced, and the four project URLs resolving.
+
+Bench delta: none — workflow only.
+Decisions taken alone:
+1. **No target input on the dispatch.** Rejected a `choice` input for production-vs-test:
+   the failure mode it introduces is worse than the flexibility it buys.
+2. **`skip-existing` on TestPyPI only**, reasoning above.
+Next: unit 23, documenting the settings CI cannot see.
+
+---
+
+## Unit 23 — settings outside version control, and corpus containment as a decision — 2026-07-30
+
+Status: complete
+Changed: `docs/GITHUB_SETUP.md`, `docs/DECISIONS.md`
+
+### Three live problems found while writing the checklist
+
+Checking each setting rather than describing it turned up three things wrong right now:
+
+1. **No GitHub environments exist.** `gh api .../environments` returns `[]`, while
+   `release.yml` references `pypi` and now `testpypi`. GitHub creates one implicitly on
+   first use, so a publish would still succeed — but with **no protection rules**, meaning
+   anyone able to push a tag can publish. And if the PyPI publisher record names an
+   environment, the names must match exactly or the OIDC exchange fails.
+2. **The About field still advertises "vulnerable dependencies".** AG009 was deleted in
+   #17; the repository page has claimed the capability ever since. Not fixed here — it is
+   a setting, and settings are yours — but it is the clearest possible demonstration of why
+   the checklist exists: nothing in CI renders that string, so nothing could fail.
+3. **`GITHUB_SETUP.md` was recommending the mistake.** Line 6 told the reader to require
+   the `test` and `package` checks. `test` is one of the three phantom contexts that
+   blocked every merge for two sessions. The document that onboards a maintainer was
+   teaching them to reproduce the incident. Corrected, with the reason attached.
+
+### What the checklist covers
+
+Six surfaces, each with what depends on it, a verify command, and whether the breakage is
+recoverable: PyPI trusted publisher (**unrecoverable** — fails after the tag is spent),
+the `pypi`/`testpypi` environments, branch-ruleset required contexts, About and topics,
+dependency graph and Dependabot alerts, and the social preview upload.
+
+Live state recorded at the time of writing:
+```
+environments           []                              <- neither exists
+required contexts      ["CodeQL","build","ci-ok"]      <- all real check-run names
+vulnerability-alerts   204 No Content                  <- enabled
+About                  "...vulnerable dependencies..." <- stale, AG009 is gone
+```
+
+Plus a five-item pre-tag sequence, ordered so the one unrecoverable item is checked last
+and checked twice.
+
+### Two `DECISIONS.md` entries
+
+**"A CI-verifiable repository still has a configuration surface CI cannot see."** The
+honest framing is that an inspection checklist is a weak control — manual, staleable, only
+run by someone who remembers. It is there because the alternative is nothing. Four
+incidents, and the shape is identical every time: *the repository is green, and the thing
+that is wrong is not in the repository*. The entry also records the one real mitigation —
+pulling settings into version control where possible, which is what `ci-ok` does by
+converting a branch-protection problem into a workflow problem.
+
+**"Corpus containment is per-consumer, because no single boundary holds."** Four readers,
+no two sharing a mechanism, and the directory irrelevant to all four — `tests/corpus/` is a
+convention this project observes and nothing else does. The standing rule is stated: any
+file whose shape implies a role will be interpreted by something regardless of location,
+and new corpus files of those shapes get checked against the reader list before landing.
+Both existing mitigations are noted as non-generalising.
+
+Verified: 198 passed + 1 xfailed, lint, mypy, bench 33 of 34.
+Bench delta: none — documentation only.
+Decisions taken alone:
+1. **Did not change the About field.** It is a setting and settings are yours; flagged
+   instead, with the corrected wording supplied in `GITHUB_SETUP.md` so it can be pasted.
+2. **Corrected the stale branch-protection recommendation** rather than only documenting
+   the general rule — a document actively recommending a known failure is worse than one
+   that is silent.

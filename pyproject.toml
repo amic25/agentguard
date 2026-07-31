@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentguard-sast"
+name = "agentguard"
 version = "0.2.0"
 description = "Static security scanner for AI agent applications"
 readme = "README.md"
